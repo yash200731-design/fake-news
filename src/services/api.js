@@ -1,4 +1,13 @@
+import axios from 'axios';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
 /**
  * Simulates a model prediction with simple keyword heuristics
@@ -73,19 +82,8 @@ export async function predictNews(text) {
   }
 
   try {
-    const response = await fetch(`${API_URL}/api/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ text }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    const response = await api.post('/api/predict', { text });
+    const data = response.data;
     
     // Support varying response shapes (e.g. fractional confidence or percentage confidence)
     let rawConf = data.confidence;
@@ -109,7 +107,14 @@ export async function predictNews(text) {
       timestamp: new Date().toISOString()
     };
   } catch (error) {
-    console.warn('FastAPI backend is offline or returned an error. Using client simulation fallback.', error);
+    // If it's a backend response error, throw the exact backend message
+    if (error.response) {
+      const serverErrorMsg = error.response.data?.detail || error.message;
+      throw new Error(`Backend Error: ${serverErrorMsg}`);
+    }
+    
+    // If it's a network error (no response received), fallback to client simulation
+    console.warn('FastAPI backend is offline or unreachable. Using client simulation fallback.', error);
     // Simulate API delay (1.2s) to show off loading animations
     await new Promise(resolve => setTimeout(resolve, 1200));
     return simulatePrediction(text);
