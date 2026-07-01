@@ -16,6 +16,56 @@ model = None
 vectorizer = None
 FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
 
+# Identical STOPWORDS definition to ensure training and inference consistency
+STOPWORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't", "as", "at", 
+    "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can't", "cannot", "could", 
+    "couldn't", "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", "each", "few", "for", 
+    "from", "further", "had", "hadn't", "has", "hasn't", "have", "haven't", "having", "he", "he'd", "he'll", "he's", 
+    "her", "here", "here's", "hers", "herself", "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", 
+    "i've", "if", "in", "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most", "mustn't", 
+    "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", 
+    "ourselves", "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", 
+    "so", "some", "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves", "then", "there", 
+    "there's", "these", "they", "they'd", "they'll", "they're", "they've", "this", "those", "through", "to", "too", 
+    "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", 
+    "what", "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", 
+    "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", 
+    "yourselves"
+}
+
+def clean_text(text: str) -> str:
+    """
+    Identical text cleaning routine used in training to normalize inputs
+    and eliminate data leakage metrics (such as the Reuters bias).
+    """
+    if not isinstance(text, str):
+        return ""
+        
+    # 1. Convert to lowercase
+    text = text.lower()
+    
+    # 2. Remove HTML tags
+    text = re.sub(r'<.*?>', '', text)
+    
+    # 3. Remove URLs
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    
+    # 4. Remove publisher source markers to eliminate model leakage (Reuters bias)
+    text = re.sub(r'\b(reuters|ap|associated\s+press|editorial)\b', '', text)
+    
+    # 5. Remove special characters and digits, leaving only letters and spaces
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    
+    # 6. Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # 7. Remove stop words
+    words = text.split()
+    cleaned_words = [word for word in words if word not in STOPWORDS]
+    
+    return " ".join(cleaned_words)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -43,7 +93,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VeriTruth AI - Fake News Detection API",
     description="FastAPI service utilizing a Scikit-Learn Logistic Regression model and Google Fact Check cross-referencing.",
-    version="1.3.0",
+    version="1.4.0",
     lifespan=lifespan
 )
 
@@ -145,7 +195,7 @@ def fetch_fact_check(query: str) -> Optional[dict]:
         
         req = urllib.request.Request(
             url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.3"}
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.4"}
         )
         
         with urllib.request.urlopen(req, timeout=2.5) as response:
@@ -192,8 +242,11 @@ async def predict_article(request: PredictionRequest):
     start_time = time.time()
     
     try:
-        # Preprocess and vectorise input text
-        text_vector = vectorizer.transform([request.text])
+        # Preprocess and clean the text identically to training
+        cleaned_text_content = clean_text(request.text)
+        
+        # Vectorise the cleaned text
+        text_vector = vectorizer.transform([cleaned_text_content])
         
         # Predict class index (0 = Real, 1 = Fake)
         pred_class_idx = int(model.predict(text_vector)[0])

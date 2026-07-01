@@ -27,7 +27,7 @@ STOPWORDS = {
 
 def clean_text(text):
     """
-    Cleans the input news text by removing tags, URLs, special characters, 
+    Cleans the input news text by removing tags, URLs, source headers, stop words,
     and lowercasing all words.
     """
     if not isinstance(text, str):
@@ -42,13 +42,16 @@ def clean_text(text):
     # 3. Remove URLs
     text = re.sub(r'https?://\S+|www\.\S+', '', text)
     
-    # 4. Remove special characters and digits, leaving only letters and spaces
+    # 4. Remove publisher source markers to eliminate model leakage (Reuters bias)
+    text = re.sub(r'\b(reuters|ap|associated\s+press|editorial)\b', '', text)
+    
+    # 5. Remove special characters and digits, leaving only letters and spaces
     text = re.sub(r'[^a-zA-Z\s]', '', text)
     
-    # 5. Remove extra whitespace
+    # 6. Remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     
-    # 6. Remove stop words
+    # 7. Remove stop words
     words = text.split()
     cleaned_words = [word for word in words if word not in STOPWORDS]
     
