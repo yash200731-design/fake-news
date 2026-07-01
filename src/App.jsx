@@ -96,6 +96,7 @@ function App() {
         confidence: data.confidence,
         probabilities: data.probabilities,
         isMock: data.isMock,
+        fact_check: data.fact_check,
         timestamp: data.timestamp
       };
 
@@ -122,6 +123,7 @@ function App() {
         Fake: item.prediction === 'Fake' ? item.confidence : 100 - item.confidence
       },
       isMock: item.isMock !== undefined ? item.isMock : true,
+      fact_check: item.fact_check,
       timestamp: item.timestamp
     });
     addToast('Past prediction reloaded into analyzer.', 'success');

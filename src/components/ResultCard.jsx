@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, ShieldAlert, AlertTriangle, BarChart3 } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, AlertTriangle, BarChart3, ArrowUpRight, Search } from 'lucide-react';
 
 export default function ResultCard({ result, loading }) {
   // Skeleton Loader State
@@ -43,15 +43,19 @@ export default function ResultCard({ result, loading }) {
                 </div>
                 <div className="w-full h-2 rounded-full shimmer" />
               </div>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <div className="h-2 rounded shimmer w-1/5" />
-                  <div className="h-2 rounded shimmer w-1/12" />
-                </div>
-                <div className="w-full h-2 rounded-full shimmer" />
-              </div>
             </div>
           </div>
+
+          {/* Fact Check Skeleton */}
+          <div className="pt-4 border-t border-dark-border/40 mt-4 space-y-2.5">
+            <div className="h-3 rounded shimmer w-1/3" />
+            <div className="p-4 rounded-xl bg-slate-950/45 border border-dark-border/20 space-y-2">
+              <div className="h-3.5 rounded shimmer w-4/5" />
+              <div className="h-3 rounded shimmer w-1/4" />
+              <div className="h-3 rounded shimmer w-1/2" />
+            </div>
+          </div>
+
         </div>
 
         {/* Disclaimer Skeleton */}
@@ -81,8 +85,29 @@ export default function ResultCard({ result, loading }) {
     );
   }
 
-  const { prediction, confidence, probabilities, isMock } = result;
+  const { prediction, confidence, probabilities, isMock, fact_check } = result;
   const isFake = prediction === 'Fake';
+
+  const formatReviewDate = (dateStr) => {
+    if (!dateStr) return 'Unknown Date';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getVerdictStyle = (verdict) => {
+    const v = (verdict || '').toLowerCase();
+    if (v.includes('false') || v.includes('fake') || v.includes('incorrect') || v.includes('misleading') || v.includes('untrue') || v.includes('debunked')) {
+      return 'bg-red-500/15 text-red-400 border-red-500/20';
+    }
+    if (v.includes('true') || v.includes('correct') || v.includes('accurate') || v.includes('legitimate')) {
+      return 'bg-brand-green/15 text-brand-green border-brand-green/20';
+    }
+    return 'bg-blue-500/15 text-brand-blue-light border-blue-500/20';
+  };
 
   return (
     <div className={`w-full glass-panel rounded-2xl p-6 sm:p-8 border transition-all duration-500 h-full flex flex-col justify-between ${
@@ -90,8 +115,10 @@ export default function ResultCard({ result, loading }) {
         ? 'border-red-500/30 glow-blue shadow-lg shadow-red-950/10' 
         : 'border-brand-green/30 glow-green shadow-lg shadow-emerald-950/10'
     }`}>
-      {/* Header */}
-      <div className="space-y-4">
+      {/* Upper Content */}
+      <div className="space-y-6">
+        
+        {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-dark-border/40">
           <div className="flex items-center space-x-2">
             {isFake ? (
@@ -110,9 +137,9 @@ export default function ResultCard({ result, loading }) {
           )}
         </div>
 
-        {/* Big Flag Category */}
-        <div className="text-center py-5 rounded-xl bg-slate-950/45 border border-dark-border/30">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block mb-1">
+        {/* Verdict Badge */}
+        <div className="text-center py-4 rounded-xl bg-slate-950/45 border border-dark-border/30">
+          <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest block mb-1">
             Verdict
           </span>
           <h4 className={`font-display font-extrabold text-3xl tracking-wide uppercase ${
@@ -122,7 +149,7 @@ export default function ResultCard({ result, loading }) {
           </h4>
           <p className="text-text-secondary text-xs mt-1.5 px-4 max-w-xs mx-auto leading-relaxed">
             {isFake 
-              ? 'High match with clickbait headers, unsubstantiated claims, or rumor syntax.'
+              ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
               : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.'}
           </p>
         </div>
@@ -146,16 +173,16 @@ export default function ResultCard({ result, loading }) {
         </div>
 
         {/* Probability Breakdown Bar */}
-        <div className="space-y-2 pt-2">
+        <div className="space-y-2 pt-1">
           <span className="text-xs font-semibold text-text-secondary uppercase tracking-widest block">
             Probability Distribution
           </span>
           
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
             {/* Real Probability */}
             <div className="space-y-1">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-text-secondary">Legitimate (Real):</span>
+              <div className="flex justify-between text-[11px] font-mono">
+                <span className="text-text-secondary">Real:</span>
                 <span className="text-text-primary font-bold">{probabilities.Real}%</span>
               </div>
               <div className="w-full bg-slate-950/40 h-2 rounded-full overflow-hidden">
@@ -168,8 +195,8 @@ export default function ResultCard({ result, loading }) {
 
             {/* Fake Probability */}
             <div className="space-y-1">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-text-secondary">Unverifiable (Fake):</span>
+              <div className="flex justify-between text-[11px] font-mono">
+                <span className="text-text-secondary">Fake:</span>
                 <span className="text-text-primary font-bold">{probabilities.Fake}%</span>
               </div>
               <div className="w-full bg-slate-950/40 h-2 rounded-full overflow-hidden">
@@ -181,10 +208,60 @@ export default function ResultCard({ result, loading }) {
             </div>
           </div>
         </div>
+
+        {/* Google Fact Check Section */}
+        <div className="pt-4 border-t border-dark-border/40 space-y-2.5">
+          <div className="flex items-center space-x-1.5">
+            <Search className="w-4 h-4 text-brand-green animate-pulse" />
+            <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">
+              Google Fact-Check Database
+            </span>
+          </div>
+
+          {fact_check ? (
+            <div className="p-4 rounded-xl bg-slate-950/45 border border-dark-border/30 space-y-2.5 text-xs leading-relaxed hover:border-brand-green/20 transition-colors">
+              <div>
+                <span className="text-[10px] font-semibold text-text-muted block uppercase tracking-wider">Claim Reviewed</span>
+                <p className="text-text-primary font-medium mt-0.5">"{fact_check.claim_title}"</p>
+              </div>
+              
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-dark-border/10 mt-1">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[10px] text-text-muted uppercase">Verdict:</span>
+                  <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border ${getVerdictStyle(fact_check.verdict)}`}>
+                    {fact_check.verdict}
+                  </span>
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">
+                  {formatReviewDate(fact_check.date)}
+                </span>
+              </div>
+              
+              <div className="pt-1 flex items-center justify-between text-[10px] text-text-muted">
+                <span>Publisher: <strong className="text-text-secondary">{fact_check.publisher}</strong></span>
+                <a 
+                  href={fact_check.source_link} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="inline-flex items-center text-brand-green hover:underline font-bold text-xs gap-0.5"
+                >
+                  Source Link <ArrowUpRight className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="py-4 px-4 rounded-xl bg-slate-950/20 border border-dark-border/20 text-center">
+              <span className="text-text-muted text-xs font-semibold">
+                No fact check found.
+              </span>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Warning/Disclaimer */}
-      <div className="pt-4 border-t border-dark-border/40 mt-4 flex items-start gap-2.5 text-[11px] text-text-secondary leading-relaxed">
+      <div className="pt-4 border-t border-dark-border/40 mt-6 flex items-start gap-2.5 text-[11px] text-text-secondary leading-relaxed">
         <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${isFake ? 'text-red-400' : 'text-brand-green'}`} />
         <span>
           AI findings should be corroborating evidence. Cross-reference claims with primary agencies (e.g. Snopes, AP, Reuters) before sharing online.
