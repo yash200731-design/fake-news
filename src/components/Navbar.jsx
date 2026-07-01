@@ -19,6 +19,7 @@ export default function Navbar({ theme, onToggleTheme }) {
 
   const navLinks = [
     { name: 'Analyze', href: '#analyze' },
+    { name: 'News Feed', href: '#news' },
     { name: 'Features', href: '#features' },
     { name: 'About', href: '#about' },
     { name: 'FAQ', href: '#faq' },

@@ -15,6 +15,8 @@ import joblib
 model = None
 vectorizer = None
 FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
+NEWS_API_KEY = "1fa513057c4d4684887264914f35d197"
+
 
 # Identical STOPWORDS definition to ensure training and inference consistency
 STOPWORDS = {
@@ -296,6 +298,40 @@ async def predict_article(request: PredictionRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal classification failed: {str(e)}"
+        )
+
+@app.get("/api/news", status_code=status.HTTP_200_OK)
+async def get_latest_news(q: Optional[str] = None, category: Optional[str] = None):
+    """
+    Fetches latest news from NewsAPI, acting as a secure server-side proxy
+    to bypass browser CORS policy restrictions on client keys.
+    """
+    try:
+        if not q and not category:
+            category = "general"
+            
+        if q:
+            # Query everything endpoint for custom search keywords
+            quoted_q = urllib.parse.quote(q)
+            url = f"https://newsapi.org/v2/everything?q={quoted_q}&language=en&pageSize=12&apiKey={NEWS_API_KEY}"
+        else:
+            # Query top headlines for categories
+            category_param = f"&category={category}" if category else ""
+            url = f"https://newsapi.org/v2/top-headlines?country=us{category_param}&pageSize=12&apiKey={NEWS_API_KEY}"
+            
+        req = urllib.request.Request(
+            url, 
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.4"}
+        )
+        
+        with urllib.request.urlopen(req, timeout=4.0) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            
+        return res_data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch news from NewsAPI: {str(e)}"
         )
 
 @app.get("/health", status_code=status.HTTP_200_OK)

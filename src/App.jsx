@@ -10,7 +10,9 @@ import FAQ from './components/FAQ';
 import Contact from './components/Contact';
 import Footer from './components/Footer';
 import Toast from './components/Toast';
+import NewsFeed from './components/NewsFeed';
 import { predictNews } from './services/api';
+
 
 function App() {
   const [result, setResult] = useState(null);
@@ -141,6 +143,18 @@ function App() {
     addToast('Analysis history cleared.', 'info');
   };
 
+  const handleVerifyNews = (text) => {
+    setExternalText(text);
+    addToast('Article text copied into analyzer. Ready to verify.', 'info');
+    
+    // Smooth scroll back to input form
+    const element = document.getElementById('analyze');
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+
   return (
     <div className="min-h-screen flex flex-col bg-dark-primary text-text-primary font-sans selection:bg-brand-green/30 selection:text-white transition-colors duration-300">
       {/* Sticky Glassmorphic Navbar */}
@@ -192,6 +206,11 @@ function App() {
             </div>
 
           </div>
+        </section>
+
+        {/* News Feed Section */}
+        <section id="news" className="py-16 border-t border-dark-border/40 scroll-mt-24">
+          <NewsFeed onVerifyNews={handleVerifyNews} />
         </section>
 
         {/* Features Section */}

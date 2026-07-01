@@ -120,3 +120,101 @@ export async function predictNews(text) {
     return simulatePrediction(text);
   }
 }
+
+/**
+ * Fetches latest verified news from NewsAPI (via the server proxy).
+ * Falls back to structured mock data if the server is offline.
+ */
+export async function fetchNews(q = '', category = '') {
+  try {
+    const params = {};
+    if (q) params.q = q;
+    if (category && category !== 'all') params.category = category.toLowerCase();
+
+    const response = await api.get('/api/news', { params });
+    return response.data.articles || [];
+  } catch (error) {
+    console.warn('FastAPI backend is offline or returned an error. Using offline fallback news feed.', error);
+    // Simulate minor network delay for loading feedback
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return getOfflineNewsFallback(q, category);
+  }
+}
+
+/**
+ * Returns pre-packaged realistic verified news stories for the offline mode.
+ */
+function getOfflineNewsFallback(q = '', category = '') {
+  const articles = [
+    {
+      title: "Voters Head to the Polls in Key Midterm Elections",
+      description: "Local precincts report steady turnout as citizens vote on local budgets and school board candidates. Election officials confirmed all systems are operating securely.",
+      source: { name: "Associated Press" },
+      publishedAt: new Date(Date.now() - 3600000).toISOString(),
+      url: "https://apnews.com",
+      urlToImage: "https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=600&auto=format&fit=crop&q=60"
+    },
+    {
+      title: "Global Tech Summit Highlights Latest AI Advancements",
+      description: "Tech leaders gathered in Silicon Valley to showcase generative models, database architectures, and next-generation neural chips. Focus remains on developer utility.",
+      source: { name: "TechCrunch" },
+      publishedAt: new Date(Date.now() - 7200000).toISOString(),
+      url: "https://techcrunch.com",
+      urlToImage: "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop&q=60"
+    },
+    {
+      title: "NASA Weather Satellite Transmits First High-Res Climate Scans",
+      description: "Mission control confirmed the telemetry signals from the newly launched climate satellite are healthy, enabling real-time storm and ocean wave observations.",
+      source: { name: "NASA" },
+      publishedAt: new Date(Date.now() - 14400000).toISOString(),
+      url: "https://nasa.gov",
+      urlToImage: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop&q=60"
+    },
+    {
+      title: "Medical Journal Publishes Breakthrough Cancer Therapy Results",
+      description: "Researchers detailed the outcomes of a clinical phase-II trial for targeted immunotherapies, showing promising remission metrics across patient trials.",
+      source: { name: "Journal of Medicine" },
+      publishedAt: new Date(Date.now() - 86400000).toISOString(),
+      url: "https://nejm.org",
+      urlToImage: "https://images.unsplash.com/photo-1579684389782-64d84b5e901a?w=600&auto=format&fit=crop&q=60"
+    },
+    {
+      title: "Central Bank Keeps Benchmark Rates Unchanged",
+      description: "The Federal Reserve cited stable job growth and moderating consumer indices as the core reasons to maintain target rates, stabilizing local bond markets.",
+      source: { name: "Reuters" },
+      publishedAt: new Date(Date.now() - 172800000).toISOString(),
+      url: "https://reuters.com",
+      urlToImage: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600&auto=format&fit=crop&q=60"
+    },
+    {
+      title: "Championship Marathon Welcomes Over Ten Thousand Runners",
+      description: "Superb weather conditions and high turnouts marked the annual city run. Local authorities managed detours smoothly, thanking hundreds of water volunteers.",
+      source: { name: "ESPN" },
+      publishedAt: new Date(Date.now() - 259200000).toISOString(),
+      url: "https://espn.com",
+      urlToImage: "https://images.unsplash.com/photo-1502224562085-639556652f33?w=600&auto=format&fit=crop&q=60"
+    }
+  ];
+
+  let filtered = articles;
+  
+  if (category && category !== 'all') {
+    const catMap = {
+      business: ["reuters"],
+      technology: ["techcrunch"],
+      science: ["nasa"],
+      health: ["journal of medicine"],
+      sports: ["espn"],
+      general: ["associated press"]
+    };
+    const allowedSources = catMap[category.toLowerCase()] || [];
+    filtered = articles.filter(a => allowedSources.includes(a.source.name.toLowerCase()));
+  }
+
+  if (q) {
+    const ql = q.toLowerCase();
+    filtered = filtered.filter(a => a.title.toLowerCase().includes(ql) || a.description.toLowerCase().includes(ql));
+  }
+
+  return filtered;
+}
