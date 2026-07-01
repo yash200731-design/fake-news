@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Send, CheckCircle, Mail, MessageSquare, User } from 'lucide-react';
 
-export default function Contact() {
+export default function Contact({ onSubmitSuccess }) {
   const [formData, setFormData] = useState({ name: '', email: '', message: '' });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -19,6 +19,9 @@ export default function Contact() {
       setTimeout(() => {
         setLoading(false);
         setSubmitted(true);
+        if (onSubmitSuccess) {
+          onSubmitSuccess();
+        }
         setFormData({ name: '', email: '', message: '' });
         // Reset success state after 5 seconds
         setTimeout(() => setSubmitted(false), 5000);

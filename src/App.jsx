@@ -9,6 +9,7 @@ import About from './components/About';
 import FAQ from './components/FAQ';
 import Contact from './components/Contact';
 import Footer from './components/Footer';
+import Toast from './components/Toast';
 import { predictNews } from './services/api';
 
 function App() {
@@ -17,6 +18,37 @@ function App() {
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
   const [externalText, setExternalText] = useState('');
+  
+  // Theme state synced with local storage or browser preference
+  const [theme, setTheme] = useState(() => {
+    try {
+      const savedTheme = localStorage.getItem('veritruth_theme');
+      if (savedTheme) return savedTheme;
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  // Toasts queue state
+  const [toasts, setToasts] = useState([]);
+
+  // Sync theme class with document element
+  useEffect(() => {
+    try {
+      const root = window.document.documentElement;
+      if (theme === 'light') {
+        root.classList.add('light');
+        root.classList.remove('dark');
+      } else {
+        root.classList.add('dark');
+        root.classList.remove('light');
+      }
+      localStorage.setItem('veritruth_theme', theme);
+    } catch (err) {
+      console.error('Failed to sync theme with document element', err);
+    }
+  }, [theme]);
 
   // Load prediction history from local storage on mount
   useEffect(() => {
@@ -30,14 +62,31 @@ function App() {
     }
   }, []);
 
+  const addToast = (message, type = 'info') => {
+    const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+    setToasts((prevToasts) => [...prevToasts, { id, message, type }]);
+  };
+
+  const removeToast = (id) => {
+    setToasts((prevToasts) => prevToasts.filter((t) => t.id !== id));
+  };
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    addToast(`Switched to ${newTheme === 'dark' ? 'Dark' : 'Light'} Mode`, 'info');
+  };
+
   const handlePredict = async (text) => {
     setError(null);
     setLoading(true);
     setResult(null);
+    addToast('Starting narrative logic evaluation...', 'info');
 
     try {
       const data = await predictNews(text);
       setResult(data);
+      addToast('Analysis complete. Verdict generated!', 'success');
 
       // Create history entry
       const newHistoryItem = {
@@ -45,6 +94,8 @@ function App() {
         text: text,
         prediction: data.prediction,
         confidence: data.confidence,
+        probabilities: data.probabilities,
+        isMock: data.isMock,
         timestamp: data.timestamp
       };
 
@@ -52,7 +103,9 @@ function App() {
       setHistory(updatedHistory);
       localStorage.setItem('veritruth_history', JSON.stringify(updatedHistory));
     } catch (err) {
-      setError(err.message || 'An unexpected error occurred during prediction.');
+      const errMsg = err.message || 'An unexpected error occurred during prediction.';
+      setError(errMsg);
+      addToast(errMsg, 'error');
       console.error(err);
     } finally {
       setLoading(false);
@@ -71,6 +124,7 @@ function App() {
       isMock: item.isMock !== undefined ? item.isMock : true,
       timestamp: item.timestamp
     });
+    addToast('Past prediction reloaded into analyzer.', 'success');
     
     // Smooth scroll back to input form
     const element = document.getElementById('analyze');
@@ -82,12 +136,13 @@ function App() {
   const handleClearHistory = () => {
     setHistory([]);
     localStorage.removeItem('veritruth_history');
+    addToast('Analysis history cleared.', 'info');
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-dark-primary text-slate-100 font-sans selection:bg-brand-green/30 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-dark-primary text-text-primary font-sans selection:bg-brand-green/30 selection:text-white transition-colors duration-300">
       {/* Sticky Glassmorphic Navbar */}
-      <Navbar />
+      <Navbar theme={theme} onToggleTheme={toggleTheme} />
 
       {/* Main Hero Section */}
       <Hero />
@@ -103,10 +158,10 @@ function App() {
             <span className="text-xs font-semibold text-brand-green uppercase tracking-widest bg-brand-green/10 border border-brand-green/20 px-3.5 py-1 rounded-full">
               Interactive Dashboard
             </span>
-            <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-white">
+            <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-text-primary">
               Verify Article Legitimacy
             </h2>
-            <p className="text-slate-400 text-sm sm:text-base max-w-lg mx-auto">
+            <p className="text-text-secondary text-sm sm:text-base max-w-lg mx-auto">
               Paste the text of a blog, column, or report below. Our classifier will analyze linguistic features to assign an integrity score.
             </p>
           </div>
@@ -131,7 +186,7 @@ function App() {
 
             {/* Result Report Column */}
             <div className="lg:col-span-5">
-              <ResultCard result={result} />
+              <ResultCard result={result} loading={loading} />
             </div>
 
           </div>
@@ -147,12 +202,15 @@ function App() {
         <FAQ />
 
         {/* Contact Section */}
-        <Contact />
+        <Contact onSubmitSuccess={() => addToast('Inquiry message sent successfully!', 'success')} />
 
       </main>
 
       {/* Footer Section */}
       <Footer />
+
+      {/* Toast Notifications */}
+      <Toast toasts={toasts} onClose={removeToast} />
     </div>
   );
 }

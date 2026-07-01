@@ -43,10 +43,10 @@ export default function FAQ() {
             <HelpCircle className="w-3.5 h-3.5" />
             <span>Got Questions?</span>
           </div>
-          <h2 className="font-display font-extrabold text-3xl text-white">
+          <h2 className="font-display font-extrabold text-3xl text-text-primary">
             Frequently Asked Questions
           </h2>
-          <p className="text-slate-400 text-sm max-w-md mx-auto">
+          <p className="text-text-secondary text-sm max-w-md mx-auto">
             Learn more about NLP classifiers, technical integrations, and data handling.
           </p>
         </div>
@@ -60,23 +60,23 @@ export default function FAQ() {
                 key={idx}
                 className={`rounded-2xl border transition-all duration-300 ${
                   isOpen 
-                    ? 'bg-slate-900/80 border-brand-green/35 shadow-md shadow-brand-green/5' 
-                    : 'bg-dark-card/30 border-dark-border/40 hover:border-slate-700'
+                    ? 'bg-slate-900/40 border-brand-green/35 shadow-md shadow-brand-green/5' 
+                    : 'bg-dark-card/30 border-dark-border/45 hover:border-brand-green/25'
                 }`}
               >
                 {/* Accordion Toggle */}
                 <button
                   onClick={() => handleToggle(idx)}
-                  className="w-full flex items-center justify-between p-5 text-left text-white font-display font-semibold text-sm sm:text-base select-none cursor-pointer"
+                  className="w-full flex items-center justify-between p-5 text-left text-text-primary font-display font-semibold text-sm sm:text-base select-none cursor-pointer"
                 >
                   <span>{faq.q}</span>
-                  <span className={`w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center border border-slate-700/60 transition-transform duration-300 ${
+                  <span className={`w-6 h-6 rounded-lg bg-slate-800/10 flex items-center justify-center border border-dark-border/40 transition-transform duration-300 ${
                     isOpen ? 'rotate-180 border-brand-green/30' : ''
                   }`}>
                     {isOpen ? (
                       <Minus className="w-3.5 h-3.5 text-brand-green" />
                     ) : (
-                      <Plus className="w-3.5 h-3.5 text-slate-400" />
+                      <Plus className="w-3.5 h-3.5 text-text-secondary" />
                     )}
                   </span>
                 </button>
@@ -85,7 +85,7 @@ export default function FAQ() {
                 <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
                   isOpen ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'
                 }`}>
-                  <p className="px-5 pb-5 text-slate-400 text-xs sm:text-sm leading-relaxed border-t border-dark-border/10 pt-3">
+                  <p className="px-5 pb-5 text-text-secondary text-xs sm:text-sm leading-relaxed border-t border-dark-border/10 pt-3">
                     {faq.a}
                   </p>
                 </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Network, FileSearch, HelpCircle, Layers, Sliders } from 'lucide-react';
+import { Network, FileSearch, Layers, Sliders } from 'lucide-react';
 
 export default function About() {
   const steps = [
@@ -41,13 +41,13 @@ export default function About() {
             <span className="text-xs font-semibold text-brand-green uppercase tracking-widest bg-brand-green/10 border border-brand-green/20 px-3.5 py-1 rounded-full">
               Linguistic Methodology
             </span>
-            <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-white leading-tight">
+            <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-text-primary leading-tight">
               Combating Deception with Deep Learning
             </h2>
-            <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+            <p className="text-text-secondary text-sm sm:text-base leading-relaxed">
               VeriTruth AI was founded on the principle that disinformation spreads six times faster than the truth. By analyzing pattern weights in human text, our classifiers can identify sensational biases, missing references, and emotional manipulation.
             </p>
-            <p className="text-slate-400 text-sm leading-relaxed">
+            <p className="text-text-muted text-sm leading-relaxed">
               We leverage Natural Language Processing (NLP) to inspect article syntax. Instead of verifying facts directly against database tables, we look at <em>how</em> a story is written, identifying stylistic fingerprints common to verified journalism versus clickbait campaigns.
             </p>
           </div>
@@ -59,21 +59,21 @@ export default function About() {
               return (
                 <div 
                   key={idx}
-                  className="p-5 rounded-2xl bg-dark-primary/60 border border-dark-border/40 hover:border-brand-green/30 transition-all duration-300 group flex items-start gap-4"
+                  className="p-5 rounded-2xl bg-dark-primary/30 border border-dark-border/40 hover:border-brand-green/30 transition-all duration-300 group flex items-start gap-4"
                 >
                   <div className="w-10 h-10 rounded-xl bg-brand-green/5 border border-brand-green/15 flex items-center justify-center flex-shrink-0 group-hover:bg-brand-green/10 transition-colors">
                     <Icon className="w-5 h-5 text-brand-green" />
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-display font-bold text-sm text-white group-hover:text-brand-green transition-colors">
+                      <h4 className="font-display font-bold text-sm text-text-primary group-hover:text-brand-green transition-colors">
                         {step.title}
                       </h4>
-                      <span className="text-[10px] font-mono text-slate-500 font-bold">
+                      <span className="text-[10px] font-mono text-text-muted font-bold">
                         {step.step}
                       </span>
                     </div>
-                    <p className="text-slate-400 text-xs leading-relaxed">
+                    <p className="text-text-secondary text-xs leading-relaxed">
                       {step.desc}
                     </p>
                   </div>

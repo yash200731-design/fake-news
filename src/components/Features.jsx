@@ -44,13 +44,13 @@ export default function Features() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Title Block */}
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <span className="text-xs font-semibold text-brand-green uppercase tracking-widest bg-brand-green/10 border border-brand-green/20 px-3.5 py-1 rounded-full">
+          <span className="text-xs font-semibold text-brand-green uppercase tracking-widest bg-brand-green/10 border border-brand-green/20 px-3.5 py-1 rounded-full animate-pulse">
             Core Capabilities
           </span>
-          <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-white">
+          <h2 className="font-display font-extrabold text-3xl sm:text-4xl text-text-primary">
             Engineered to Expose Deception
           </h2>
-          <p className="text-slate-400 font-sans max-w-xl mx-auto text-sm sm:text-base leading-relaxed">
+          <p className="text-text-secondary font-sans max-w-xl mx-auto text-sm sm:text-base leading-relaxed">
             VeriTruth AI analyzes linguistic signatures to flag narratives that lack evidence, use sensational formatting, or present fake claims.
           </p>
         </div>
@@ -69,10 +69,10 @@ export default function Features() {
                   <div className="w-12 h-12 rounded-xl bg-brand-green/10 flex items-center justify-center border border-brand-green/25">
                     <Icon className="w-6 h-6 text-brand-green" />
                   </div>
-                  <h3 className="font-display font-bold text-lg text-white">
+                  <h3 className="font-display font-bold text-lg text-text-primary">
                     {feature.title}
                   </h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">
+                  <p className="text-text-secondary text-sm leading-relaxed">
                     {feature.desc}
                   </p>
                 </div>

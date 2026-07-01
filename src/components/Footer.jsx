@@ -3,7 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="bg-dark-primary border-t border-dark-border py-12">
+    <footer className="bg-dark-primary border-t border-dark-border py-12 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           
@@ -12,13 +12,13 @@ export default function Footer() {
             <div className="w-8 h-8 rounded-lg bg-brand-green/10 flex items-center justify-center border border-brand-green/30">
               <ShieldCheck className="w-5 h-5 text-brand-green" />
             </div>
-            <span className="font-display font-bold text-base tracking-tight text-white">
-              Veri<span className="text-brand-green">Truth</span> <span className="text-[10px] text-slate-500 font-mono">v1.0.0</span>
+            <span className="font-display font-bold text-base tracking-tight text-text-primary">
+              Veri<span className="text-brand-green">Truth</span> <span className="text-[10px] text-text-muted font-mono">v1.0.0</span>
             </span>
           </div>
 
           {/* Center Links (Mock Info) */}
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-xs text-text-secondary">
             <a href="#analyze" className="hover:text-brand-green transition-colors">Analyzer</a>
             <a href="#features" className="hover:text-brand-green transition-colors">Capabilities</a>
             <a href="#about" className="hover:text-brand-green transition-colors">NLP Research</a>
@@ -32,7 +32,7 @@ export default function Footer() {
               href="https://github.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center border border-dark-border/60 hover:border-brand-green text-slate-400 hover:text-white transition-all cursor-pointer"
+              className="w-9 h-9 rounded-xl bg-dark-secondary/45 flex items-center justify-center border border-dark-border hover:border-brand-green text-text-secondary hover:text-text-primary transition-all cursor-pointer"
               title="GitHub Repository"
             >
               <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -44,7 +44,7 @@ export default function Footer() {
               href="https://linkedin.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center border border-dark-border/60 hover:border-brand-green text-slate-400 hover:text-white transition-all cursor-pointer"
+              className="w-9 h-9 rounded-xl bg-dark-secondary/45 flex items-center justify-center border border-dark-border hover:border-brand-green text-text-secondary hover:text-text-primary transition-all cursor-pointer"
               title="LinkedIn Profile"
             >
               <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -54,14 +54,15 @@ export default function Footer() {
               </svg>
             </a>
           </div>
+
         </div>
 
         {/* Bottom Bar */}
-        <div className="mt-8 pt-8 border-t border-dark-border/20 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-4">
+        <div className="mt-8 pt-8 border-t border-dark-border/20 flex flex-col sm:flex-row items-center justify-between text-[11px] text-text-muted gap-4">
           <p>© {new Date().getFullYear()} VeriTruth AI. All rights reserved. Open-source under MIT License.</p>
           <div className="flex space-x-4">
-            <span className="cursor-default">Privacy Policy</span>
-            <span className="cursor-default">Terms of Service</span>
+            <span className="cursor-default hover:text-brand-green transition-colors">Privacy Policy</span>
+            <span className="cursor-default hover:text-brand-green transition-colors">Terms of Service</span>
           </div>
         </div>
       </div>

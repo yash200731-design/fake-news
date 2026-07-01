@@ -19,7 +19,7 @@ export default function Hero() {
             </div>
 
             {/* Main Title */}
-            <h1 className="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl tracking-tight text-white leading-tight">
+            <h1 className="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl tracking-tight text-text-primary leading-tight">
               AI Fake News <br className="hidden sm:inline" />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-green-light via-brand-green to-emerald-400">
                 Detection Engine
@@ -27,7 +27,7 @@ export default function Hero() {
             </h1>
 
             {/* Description */}
-            <p className="text-slate-300 text-base sm:text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed font-sans">
+            <p className="text-text-secondary text-base sm:text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed font-sans">
               Safeguard your information feed with our advanced machine learning classifier. Analyze articles, detect sensationalism, identify deep-fake narratives, and receive accurate real-time integrity ratings in seconds.
             </p>
 
@@ -35,13 +35,13 @@ export default function Hero() {
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-4">
               <a
                 href="#analyze"
-                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-brand-green hover:bg-brand-green-dark text-dark-primary font-bold text-base transition-all duration-300 shadow-lg shadow-brand-green/20 hover:shadow-brand-green/40 hover:translate-y-[-2px]"
+                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-brand-green hover:bg-brand-green-dark text-dark-primary font-bold text-base transition-all duration-300 shadow-lg shadow-brand-green/20 hover:shadow-brand-green/45 hover:translate-y-[-2px] text-center"
               >
                 Analyze Article
               </a>
               <a
                 href="#about"
-                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-dark-card/50 hover:bg-dark-card border border-dark-border text-slate-200 hover:text-white font-semibold text-base transition-all duration-300 backdrop-blur-sm"
+                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-dark-secondary/40 hover:bg-dark-secondary border border-dark-border text-text-secondary hover:text-text-primary font-semibold text-base transition-all duration-300 backdrop-blur-sm text-center"
               >
                 Learn Methodology
               </a>
@@ -50,16 +50,16 @@ export default function Hero() {
             {/* Trust Stats / Features Row */}
             <div className="grid grid-cols-3 gap-6 pt-8 border-t border-dark-border/40 max-w-md mx-auto lg:mx-0">
               <div>
-                <p className="font-display font-bold text-2xl text-white">98.4%</p>
-                <p className="text-xs text-slate-400">Model Accuracy</p>
+                <p className="font-display font-bold text-2xl text-text-primary">98.4%</p>
+                <p className="text-xs text-text-muted">Model Accuracy</p>
               </div>
               <div>
-                <p className="font-display font-bold text-2xl text-white">&lt; 1.5s</p>
-                <p className="text-xs text-slate-400">Response Time</p>
+                <p className="font-display font-bold text-2xl text-text-primary">&lt; 1.5s</p>
+                <p className="text-xs text-text-muted">Response Time</p>
               </div>
               <div>
-                <p className="font-display font-bold text-2xl text-white">10M+</p>
-                <p className="text-xs text-slate-400">Articles Checked</p>
+                <p className="font-display font-bold text-2xl text-text-primary">10M+</p>
+                <p className="text-xs text-text-muted">Articles Checked</p>
               </div>
             </div>
           </div>
@@ -75,7 +75,7 @@ export default function Hero() {
               <div className="flex items-center justify-between pb-4 border-b border-dark-border/40 relative z-10">
                 <div className="flex items-center space-x-2">
                   <Activity className="w-5 h-5 text-brand-green animate-pulse" />
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">System Monitor</span>
+                  <span className="text-xs font-semibold text-text-muted uppercase tracking-widest">System Monitor</span>
                 </div>
                 <span className="w-2.5 h-2.5 rounded-full bg-brand-green animate-ping" />
               </div>
@@ -83,11 +83,11 @@ export default function Hero() {
               {/* Card Content Simulating Classifier */}
               <div className="space-y-4 my-6 flex-grow flex flex-col justify-center relative z-10">
                 {/* Floating Box 1 */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/50 flex items-center space-x-3 transform -rotate-1 hover:rotate-0 transition-transform">
+                <div className="p-3.5 rounded-xl bg-dark-secondary/60 border border-dark-border flex items-center space-x-3 transform -rotate-1 hover:rotate-0 transition-transform">
                   <FileText className="w-5 h-5 text-brand-blue flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-400 truncate">Pasted News Text Input</p>
-                    <p className="text-xs font-semibold text-white truncate font-mono">"Breaking: Miracle vaccine cured..."</p>
+                    <p className="text-xs text-text-muted truncate">Pasted News Text Input</p>
+                    <p className="text-xs font-semibold text-text-primary truncate font-mono">"Breaking: Miracle vaccine cured..."</p>
                   </div>
                 </div>
 
@@ -101,10 +101,10 @@ export default function Hero() {
                 </div>
 
                 {/* Floating Box 2 */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-brand-green/30 flex items-center space-x-3 transform rotate-1 hover:rotate-0 transition-transform shadow-md shadow-brand-green/5">
+                <div className="p-3.5 rounded-xl bg-dark-secondary/60 border border-brand-green/30 flex items-center space-x-3 transform rotate-1 hover:rotate-0 transition-transform shadow-md shadow-brand-green/5">
                   <ShieldAlert className="w-5 h-5 text-brand-green flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-400">Classification Result</p>
+                    <p className="text-xs text-text-muted">Classification Result</p>
                     <p className="text-sm font-bold text-brand-green flex items-center">
                       92.4% Probability of Sensationalism
                     </p>
@@ -113,7 +113,7 @@ export default function Hero() {
               </div>
 
               {/* Card Footer */}
-              <div className="pt-4 border-t border-dark-border/40 flex items-center justify-between text-[11px] text-slate-400 relative z-10">
+              <div className="pt-4 border-t border-dark-border/40 flex items-center justify-between text-[11px] text-text-muted relative z-10">
                 <span>Model v4.1.2-Stable</span>
                 <span>CORS SSL Encrypted</span>
               </div>
