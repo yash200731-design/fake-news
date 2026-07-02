@@ -85,7 +85,8 @@ export default function ResultCard({ result, loading }) {
     );
   }
 
-  const { prediction, confidence, probabilities, isMock, fact_check } = result;
+  const { prediction, confidence, probabilities, isMock, fact_check, uncertain } = result;
+  const isUncertain = uncertain || prediction === 'Prediction Uncertain';
   const isFake = prediction === 'Fake';
 
   const formatReviewDate = (dateStr) => {
@@ -111,9 +112,11 @@ export default function ResultCard({ result, loading }) {
 
   return (
     <div className={`w-full glass-panel rounded-2xl p-6 sm:p-8 border transition-all duration-500 h-full flex flex-col justify-between ${
-      isFake 
-        ? 'border-red-500/30 glow-blue shadow-lg shadow-red-950/10' 
-        : 'border-brand-green/30 glow-green shadow-lg shadow-emerald-950/10'
+      isUncertain
+        ? 'border-amber-500/30 glow-yellow shadow-lg shadow-amber-950/10'
+        : isFake 
+          ? 'border-red-500/30 glow-blue shadow-lg shadow-red-950/10' 
+          : 'border-brand-green/30 glow-green shadow-lg shadow-emerald-950/10'
     }`}>
       {/* Upper Content */}
       <div className="space-y-6">
@@ -121,7 +124,9 @@ export default function ResultCard({ result, loading }) {
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-dark-border/40">
           <div className="flex items-center space-x-2">
-            {isFake ? (
+            {isUncertain ? (
+              <AlertTriangle className="w-6 h-6 text-amber-500 animate-pulse" />
+            ) : isFake ? (
               <ShieldAlert className="w-6 h-6 text-red-500" />
             ) : (
               <ShieldCheck className="w-6 h-6 text-brand-green" />
@@ -143,14 +148,16 @@ export default function ResultCard({ result, loading }) {
             Verdict
           </span>
           <h4 className={`font-display font-extrabold text-3xl tracking-wide uppercase ${
-            isFake ? 'text-red-500' : 'text-brand-green'
+            isUncertain ? 'text-amber-500' : isFake ? 'text-red-500' : 'text-brand-green'
           }`}>
-            {isFake ? 'Fake News' : 'Verified Real'}
+            {prediction}
           </h4>
           <p className="text-text-secondary text-xs mt-1.5 px-4 max-w-xs mx-auto leading-relaxed">
-            {isFake 
-              ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
-              : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.'}
+            {isUncertain
+              ? 'Linguistic style displays mixed structural features, making a confident classification impossible.'
+              : isFake 
+                ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
+                : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.'}
           </p>
         </div>
 
@@ -158,19 +165,20 @@ export default function ResultCard({ result, loading }) {
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs">
             <span className="text-text-secondary">Model Confidence Rating:</span>
-            <span className={`font-mono font-bold ${isFake ? 'text-red-400' : 'text-brand-green-light'}`}>
+            <span className={`font-mono font-bold ${isUncertain ? 'text-amber-400' : isFake ? 'text-red-400' : 'text-brand-green-light'}`}>
               {confidence}%
             </span>
           </div>
           <div className="w-full bg-slate-950/70 h-3 rounded-full overflow-hidden p-0.5 border border-slate-800">
             <div 
               className={`h-full rounded-full transition-all duration-1000 ease-out ${
-                isFake ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gradient-to-r from-brand-green to-emerald-400'
+                isUncertain ? 'bg-gradient-to-r from-yellow-500 to-amber-400' : isFake ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gradient-to-r from-brand-green to-emerald-400'
               }`}
               style={{ width: `${confidence}%` }}
             />
           </div>
         </div>
+
 
         {/* Probability Breakdown Bar */}
         <div className="space-y-2 pt-1">
@@ -262,7 +270,7 @@ export default function ResultCard({ result, loading }) {
 
       {/* Warning/Disclaimer */}
       <div className="pt-4 border-t border-dark-border/40 mt-6 flex items-start gap-2.5 text-[11px] text-text-secondary leading-relaxed">
-        <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${isFake ? 'text-red-400' : 'text-brand-green'}`} />
+        <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${isUncertain ? 'text-amber-400' : isFake ? 'text-red-400' : 'text-brand-green'}`} />
         <span>
           AI findings should be corroborating evidence. Cross-reference claims with primary agencies (e.g. Snopes, AP, Reuters) before sharing online.
         </span>

@@ -137,11 +137,13 @@ class FactCheckInfo(BaseModel):
 
 # Output Pydantic Model for API response validation
 class PredictionResponse(BaseModel):
-    prediction: str = Field(..., description="Legitimacy verdict: 'Real' or 'Fake'")
-    confidence: float = Field(..., description="Model confidence score as a fraction (0.0 to 1.0)")
+    prediction: str = Field(..., description="Legitimacy verdict: 'Real', 'Fake', or 'Prediction Uncertain'")
+    confidence: float = Field(..., description="Model confidence score as a percentage (0.0 to 100.0)")
+    uncertain: bool = Field(..., description="True if prediction confidence is below 75%")
     probabilities: dict = Field(..., description="Probability scores for each class")
     processing_time: float = Field(..., description="Server classification execution time in seconds")
     fact_check: Optional[FactCheckInfo] = Field(None, description="Google Fact Check matches (if found)")
+
 
 def extract_search_query(text: str) -> str:
     """
@@ -328,6 +330,15 @@ async def predict_article(request: PredictionRequest):
         # Run classification in pure Python (no sklearn required)
         verdict, confidence, probabilities_map = predict_pure_python(request.text)
         
+        # Convert values to percentages rounded to 1 decimal place
+        confidence_pct = round(confidence * 100, 1)
+        prob_real_pct = round(probabilities_map["Real"] * 100, 1)
+        prob_fake_pct = round(probabilities_map["Fake"] * 100, 1)
+        
+        # Check if confidence is below 75% threshold
+        is_uncertain = confidence_pct < 75.0
+        prediction_label = "Prediction Uncertain" if is_uncertain else verdict
+        
         # Extract search query and lookup Google Fact Check API
         search_query = extract_search_query(request.text)
         fact_check_result = fetch_fact_check(search_query)
@@ -351,12 +362,17 @@ async def predict_article(request: PredictionRequest):
             )
         
         return PredictionResponse(
-            prediction=verdict,
-            confidence=confidence,
-            probabilities=probabilities_map,
+            prediction=prediction_label,
+            confidence=confidence_pct,
+            uncertain=is_uncertain,
+            probabilities={
+                "Real": prob_real_pct,
+                "Fake": prob_fake_pct
+            },
             processing_time=processing_duration,
             fact_check=fact_check_info
         )
+
         
     except Exception as e:
         raise HTTPException(

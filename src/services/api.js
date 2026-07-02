@@ -103,13 +103,15 @@ export async function predictNews(text) {
     probFake = probFake <= 1 ? Math.round(probFake * 100) : Math.round(probFake);
 
     return {
-      prediction: data.prediction, // Expects "Real" or "Fake"
+      prediction: data.prediction,
       confidence: confidence,
+      uncertain: data.uncertain || false,
       probabilities: {
         Real: probReal,
         Fake: probFake
       },
       isMock: false,
+      fact_check: data.fact_check || null,
       timestamp: new Date().toISOString()
     };
   } catch (error) {
