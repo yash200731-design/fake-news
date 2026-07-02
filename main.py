@@ -167,9 +167,11 @@ def explain_text_perturbation(text: str, original_prob_real: float, num_features
         print(f"LIME attribution warning: {str(e)}")
         return []
 
+model_error = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model, vectorizer
+    global model, vectorizer, model_error
     base_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(base_dir, "model.pkl")
     vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
@@ -181,8 +183,10 @@ async def lifespan(app: FastAPI):
             vectorizer = joblib.load(vectorizer_path)
             print("SUCCESS: Traditional model and vectorizer loaded successfully!")
         else:
-            print("CRITICAL: model.pkl or vectorizer.pkl missing!")
+            model_error = f"Files missing. model_path exists: {os.path.exists(model_path)}, vectorizer_path exists: {os.path.exists(vectorizer_path)}"
+            print(f"CRITICAL: {model_error}")
     except Exception as e:
+        model_error = f"{type(e).__name__}: {str(e)}"
         print(f"CRITICAL ERROR loading model: {str(e)}")
         
     yield
@@ -402,9 +406,16 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
         )
 
 @app.get("/health", status_code=status.HTTP_200_OK)
+@app.get("/api/health", status_code=status.HTTP_200_OK)
 async def health_check():
     is_model_ready = model is not None
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     return {
         "status": "online" if is_model_ready else "degraded",
-        "model_loaded": is_model_ready
+        "model_loaded": is_model_ready,
+        "error": model_error,
+        "base_dir": base_dir,
+        "model_exists": os.path.exists(os.path.join(base_dir, "model.pkl")),
+        "vectorizer_exists": os.path.exists(os.path.join(base_dir, "vectorizer.pkl")),
+        "dir_contents": os.listdir(base_dir) if os.path.exists(base_dir) else []
     }
