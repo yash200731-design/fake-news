@@ -41,7 +41,8 @@ STOPWORDS = {
     "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", 
     "what", "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", 
     "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", 
-    "yourselves"
+    "yourselves", "reuters", "reuter", "associated", "press", "ap", "editorial", "said", "via", "says", "report", 
+    "reported", "washington", "london", "news"
 }
 
 def clean_text(text: str) -> str:
@@ -366,25 +367,32 @@ async def predict_article(request: PredictionRequest):
             fc_url = fact_check_result["source_link"]
             fc_date = fact_check_result.get("date")
             
-        # 3. Hybrid Decision Engine
+        # 3. News Verification Fallback (fetch early for hybrid validation)
+        similar_news = []
+        if not fact_check_result:
+            similar_news = fetch_similar_news_newsdata(search_query)
+            if not similar_news:
+                similar_news = fetch_similar_news_newsapi(search_query)
+
+        # 4. Hybrid Decision Engine
         if fact_check_category == "TRUE":
             final_verdict = "VERIFIED REAL"
         elif fact_check_category == "FALSE":
             final_verdict = "FAKE"
         else:
+            # Overwrite biased ML predictions if corroborated by trusted sources
+            if similar_news and ml_pred == "Fake":
+                ml_pred = "Real"
+                prob_real_pct = 85.0
+                prob_fake_pct = 15.0
+                confidence_pct = 85.0
+                
             if confidence_pct >= 80.0:
                 final_verdict = ml_pred
             elif 60.0 <= confidence_pct < 80.0:
                 final_verdict = "Likely Real" if ml_pred == "Real" else "Likely Fake"
             else:
                 final_verdict = "Prediction Uncertain"
-                
-        # 4. News Verification Fallback
-        similar_news = []
-        if not fact_check_result:
-            similar_news = fetch_similar_news_newsdata(search_query)
-            if not similar_news:
-                similar_news = fetch_similar_news_newsapi(search_query)
             
         # 5. Credibility Score & Risk Level calculation
         if final_verdict in ["Real", "VERIFIED REAL", "Likely Real"]:
