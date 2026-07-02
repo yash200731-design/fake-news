@@ -1,0 +1,10 @@
+fake.csv
+true.csv
+train_model.py
+train_traditional.py
+node_modules
+dist
+.git
+.agents
+*.log
+nltk_data/corpora/wordnet.zip
