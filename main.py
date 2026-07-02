@@ -75,8 +75,10 @@ async def lifespan(app: FastAPI):
     Loads the trained model and vectorizer at application startup.
     """
     global model, vectorizer
-    model_path = "model.pkl"
-    vectorizer_path = "vectorizer.pkl"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(base_dir, "model.pkl")
+    vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
+
     
     if not os.path.exists(model_path) or not os.path.exists(vectorizer_path):
         print(f"CRITICAL ERROR: Model artifacts ('{model_path}', '{vectorizer_path}') not found!")
@@ -234,12 +236,21 @@ async def predict_article(request: PredictionRequest):
     """
     global model, vectorizer
     
-    # Verify that model artifacts are loaded
+    # Verify that model artifacts are loaded (or load them on-demand if serverless lifespans are skipped)
     if model is None or vectorizer is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model is not loaded. Please train the model or check server configurations."
-        )
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(base_dir, "model.pkl")
+        vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
+        
+        try:
+            model = joblib.load(model_path)
+            vectorizer = joblib.load(vectorizer_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Model artifacts not found or failed to load: {str(e)}"
+            )
+
         
     start_time = time.time()
     
