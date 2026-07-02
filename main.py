@@ -10,27 +10,50 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# Global variables for model and tokenizer
-tokenizer = None
+# Global variables for model and vectorizer
 model = None
+vectorizer = None
 FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
 NEWS_API_KEY = "1fa513057c4d4684887264914f35d197"
 
-def clean_text_bert(text: str) -> str:
+# NLTK local WordNet path setup
+base_dir = os.path.dirname(os.path.abspath(__file__))
+import nltk
+nltk.data.path.append(os.path.join(base_dir, "nltk_data"))
+from nltk.stem import WordNetLemmatizer
+lemmatizer = WordNetLemmatizer()
+
+STOPWORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't", "as", "at", 
+    "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can't", "cannot", "could", 
+    "couldn't", "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", "each", "few", "for", 
+    "from", "further", "had", "hadn't", "has", "hasn't", "have", "haven't", "having", "he", "he'd", "he'll", "he's", 
+    "her", "here", "here's", "hers", "herself", "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", 
+    "i've", "if", "in", "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most", "mustn't", 
+    "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", 
+    "ourselves", "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", 
+    "so", "some", "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves", "then", "there", 
+    "there's", "these", "they", "they'd", "they'll", "they're", "they've", "this", "those", "through", "to", "too", 
+    "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", 
+    "what", "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", 
+    "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", 
+    "yourselves"
+}
+
+def clean_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
-    # Remove HTML tags
-    text = re.sub(r'<.*?>', '', text)
-    # Remove URLs
-    text = re.sub(r'https?://\S+|www\.\S+', '', text)
-    # Remove extra spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    text = text.lower()
+    text = re.sub(r'<.*?>', '', text) # Remove HTML
+    text = re.sub(r'https?://\S+|www\.\S+', '', text) # Remove URLs
+    text = re.sub(r'[^a-zA-Z\s]', '', text) # Remove special characters/numbers
+    text = re.sub(r'\s+', ' ', text).strip() # Extra spaces
+    
+    words = text.split()
+    cleaned = [lemmatizer.lemmatize(w) for w in words if w not in STOPWORDS]
+    return " ".join(cleaned)
 
 def extract_search_query(text: str) -> str:
-    """
-    Extracts the main claim sentence from the article text for fact check lookup.
-    """
     clean = re.sub(r'\s+', ' ', text).strip()
     sentences = re.split(r'(?<=[.!?])\s+', clean)
     first_sentence = sentences[0] if sentences else clean
@@ -39,23 +62,14 @@ def extract_search_query(text: str) -> str:
     return first_sentence
 
 def fetch_fact_check(query: str) -> Optional[dict]:
-    """
-    Queries Google Fact Check Tools API for the given search query.
-    """
     if not query or not FACT_CHECK_API_KEY:
         return None
     try:
         quoted_query = urllib.parse.quote(query)
         url = f"https://factchecktools.googleapis.com/v1alpha1/claims:search?query={quoted_query}&key={FACT_CHECK_API_KEY}"
-        
-        req = urllib.request.Request(
-            url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.1"}
-        )
-        
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=3.5) as response:
             res_data = json.loads(response.read().decode("utf-8"))
-            
         if res_data.get("claims"):
             claim = res_data["claims"][0]
             if claim.get("claimReview"):
@@ -67,126 +81,121 @@ def fetch_fact_check(query: str) -> Optional[dict]:
                     "source_link": review.get("url")
                 }
     except Exception as e:
-        print(f"Fact Check API warning: {str(e)}")
+        print(f"Fact Check warning: {str(e)}")
     return None
 
 def get_fact_check_verdict_category(verdict_text: str) -> str:
-    """
-    Classifies raw fact check ratings into FALSE, TRUE, or NONE categories.
-    """
     if not verdict_text:
         return "NONE"
     v = verdict_text.lower()
     false_keywords = ["false", "fake", "incorrect", "untrue", "debunked", "misleading", "partly false"]
     true_keywords = ["true", "correct", "accurate", "legitimate", "verified", "mostly true", "correct attribution"]
-    
     if any(fk in v for fk in false_keywords):
         return "FALSE"
     if any(tk in v for tk in true_keywords):
         return "TRUE"
     return "NONE"
 
-def explain_text_lime(text: str, original_prob_real: float, num_features: int = 15) -> list:
+def fetch_similar_news_newsapi(query: str) -> list:
     """
-    Runs a lightweight LIME-like perturbation check to determine word importance.
+    Searches NewsAPI for similar news articles from trusted sources.
     """
-    global tokenizer, model
-    if not tokenizer or not model:
+    if not query or not NEWS_API_KEY:
         return []
-        
     try:
-        import torch
-        # Clean and tokenize words of length >= 4
+        domains = "bbc.co.uk,bbc.com,reuters.com,thehindu.com,indianexpress.com,ndtv.com,cnn.com"
+        quoted_query = urllib.parse.quote(query)
+        url = f"https://newsapi.org/v2/everything?q={quoted_query}&domains={domains}&language=en&pageSize=4&apiKey={NEWS_API_KEY}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=3.5) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+        articles = []
+        for art in res_data.get("articles", []):
+            if art.get("title") and art.get("title") != "[Removed]":
+                articles.append({
+                    "source": art.get("source", {}).get("name", "Trusted Source"),
+                    "headline": art.get("title", ""),
+                    "published_date": art.get("publishedAt"),
+                    "link": art.get("url", "")
+                })
+        return articles
+    except Exception as e:
+        print(f"NewsAPI query warning: {str(e)}")
+        return []
+
+def explain_text_perturbation(text: str, original_prob_real: float, num_features: int = 15) -> list:
+    global model, vectorizer
+    if not model or not vectorizer:
+        return []
+    try:
         words = re.findall(r'\b[a-zA-Z]{4,}\b', text)
-        
-        # Standard english stopwords list
-        stopwords = {
-            "the", "and", "a", "of", "to", "is", "in", "that", "it", "he", "was", "for", "on", 
-            "are", "as", "with", "his", "they", "i", "at", "be", "this", "have", "from", "or", 
-            "one", "had", "by", "word", "but", "not", "what", "all", "were", "we", "when", 
-            "your", "can", "said", "there", "use", "an", "each", "which", "she", "do", "how", 
-            "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", 
-            "these", "so", "some", "her", "would", "make", "like", "him", "into", "time", 
-            "has", "look", "two", "more", "write", "go", "see", "number", "no", "way", 
-            "could", "people", "my", "than", "first", "water", "been", "call", "who", "oil", 
-            "its", "now", "find", "long", "down", "day", "did", "get", "come", "made", "may", 
-            "part", "news", "said", "also", "would", "about", "were"
-        }
-        
-        unique_words = list(set([w for w in words if w.lower() not in stopwords]))[:30]
+        unique_words = list(set([w for w in words if w.lower() not in STOPWORDS]))[:35]
         if not unique_words:
             return []
             
-        # Create perturbed variations of text
         perturbed_texts = []
         for word in unique_words:
             pattern = r'\b' + re.escape(word) + r'\b'
-            perturbed_text = re.sub(pattern, '[MASK]', text, flags=re.IGNORECASE)
-            perturbed_texts.append(perturbed_text)
+            perturbed_text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+            perturbed_texts.append(clean_text(perturbed_text))
             
-        # Batch inference
-        inputs = tokenizer(perturbed_texts, return_tensors="pt", truncation=True, max_length=256, padding=True)
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits
-            
-        probs = torch.softmax(logits, dim=-1).tolist()
+        X_perturbed = vectorizer.transform(perturbed_texts)
+        probs = model.predict_proba(X_perturbed)
         
         highlights = []
         for i, word in enumerate(unique_words):
-            perturbed_prob_real = probs[i][0]
+            perturbed_prob_real = probs[i][0] * 100.0
             diff = original_prob_real - perturbed_prob_real
             
-            if abs(diff) > 0.001:
+            # Label supports: Real, Fake, or Neutral based on attribution delta
+            if abs(diff) < 0.05:
+                supports = "Neutral"
+                score = 0.0
+            else:
                 supports = "Real" if diff > 0 else "Fake"
-                highlights.append({
-                    "word": word,
-                    "score": round(abs(diff), 4),
-                    "supports": supports
-                })
+                score = round(abs(diff), 4)
                 
-        # Sort by importance magnitude
-        highlights = sorted(highlights, key=lambda x: x["score"], reverse=True)[:num_features]
+            highlights.append({
+                "word": word,
+                "score": score,
+                "supports": supports
+            })
+        # Sort highlights: put Neutral at the bottom
+        highlights = sorted(highlights, key=lambda x: x["score"] if x["supports"] != "Neutral" else -1, reverse=True)[:num_features]
         return highlights
     except Exception as e:
-        print(f"LIME explainability warning: {str(e)}")
+        print(f"LIME attribution warning: {str(e)}")
         return []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Context manager to handle startup and shutdown events.
-    Loads the fine-tuned DistilBERT model. If the local weights are missing
-    (e.g., on Vercel deployment), it falls back to the default distilbert-base-uncased weights.
-    """
-    global tokenizer, model
+    global model, vectorizer
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    model_dir = os.path.join(base_dir, "best_model")
-    
-    model_path = model_dir if os.path.exists(model_dir) else "distilbert-base-uncased"
-    print(f"Loading DistilBERT model and tokenizer from: {model_path}")
+    model_path = os.path.join(base_dir, "model.pkl")
+    vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
     
     try:
-        import torch
-        from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
-        tokenizer = DistilBertTokenizerFast.from_pretrained(model_path)
-        model = DistilBertForSequenceClassification.from_pretrained(model_path)
-        model.eval()
-        print("SUCCESS: DistilBERT model loaded successfully!")
+        import joblib
+        if os.path.exists(model_path) and os.path.exists(vectorizer_path):
+            model = joblib.load(model_path)
+            vectorizer = joblib.load(vectorizer_path)
+            print("SUCCESS: Traditional model and vectorizer loaded successfully!")
+        else:
+            print("CRITICAL: model.pkl or vectorizer.pkl missing!")
     except Exception as e:
-        print(f"CRITICAL ERROR: Failed to load DistilBERT model: {str(e)}")
+        print(f"CRITICAL ERROR loading model: {str(e)}")
         
     yield
     print("Application shutdown complete.")
 
 app = FastAPI(
-    title="VeriTruth AI - Fake News Detection API",
-    description="FastAPI service utilizing a Hugging Face DistilBERT Transformer, Google Fact Check API, and LIME Explainability.",
-    version="2.3.0",
+    title="VeriTruth AI - News Credibility Analyzer",
+    description="FastAPI service combining Scikit-Learn predictions, Google Fact Check verification, and explainability.",
+    version="3.0.0",
     lifespan=lifespan
 )
 
-# Enable CORS (Cross-Origin Resource Sharing)
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -195,132 +204,180 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Input Pydantic Model for API request validation
+# Input Pydantic Model
 class PredictionRequest(BaseModel):
-    text: str = Field(
-        ..., 
-        min_length=15, 
-        max_length=50000, 
-        description="The full content of the news article to predict."
-    )
+    text: str = Field(..., min_length=15, max_length=50000)
+
+class SimilarNewsItem(BaseModel):
+    source: str = Field(..., description="Publisher name")
+    headline: str = Field(..., description="Article headline")
+    published_date: Optional[str] = Field(None, description="Publish date")
+    link: str = Field(..., description="Link URL")
 
 class HighlightFeature(BaseModel):
-    word: str = Field(..., description="The word analyzed")
+    word: str = Field(..., description="Analyzed word token")
     score: float = Field(..., description="Explainability attribution score")
-    supports: str = Field(..., description="Class supported: 'Real' or 'Fake'")
+    supports: str = Field(..., description="Supports: 'Real', 'Fake', or 'Neutral'")
 
-# Output Pydantic Model for API response validation
+# Output Pydantic Model
 class PredictionResponse(BaseModel):
     prediction: str = Field(..., description="Final Verdict")
-    ml_prediction: str = Field(..., description="Raw Machine Learning Prediction")
-    confidence: float = Field(..., description="Model confidence score")
-    uncertain: bool = Field(..., description="True if final verdict is Prediction Uncertain")
-    fact_check_status: str = Field(..., description="Google Fact Check Status")
+    confidence: float = Field(..., description="Final confidence rating percentage")
+    probability_real: float = Field(..., description="Raw probability Real class percentage")
+    probability_fake: float = Field(..., description="Raw probability Fake class percentage")
+    credibility_score: float = Field(..., description="Credibility score rating (0-100)")
+    risk_level: str = Field(..., description="Risk Level: 'Low', 'Medium', or 'High'")
+    fact_check_status: str = Field(..., description="Google Fact Check verification status rating")
     publisher: Optional[str] = Field(None, description="Fact check publisher")
-    review_url: Optional[str] = Field(None, description="URL of the fact check review")
-    published_date: Optional[str] = Field(None, description="Published date of the claim review")
-    highlights: List[HighlightFeature] = Field(default=[], description="LIME explainability highlights")
+    review_url: Optional[str] = Field(None, description="Fact check source review link")
+    published_date: Optional[str] = Field(None, description="Fact check publish date")
+    similar_news: List[SimilarNewsItem] = Field(default=[], description="Similar articles found from trusted sources")
+    explanation: List[str] = Field(default=[], description="Bullet explanation sentences")
+    highlights: List[HighlightFeature] = Field(default=[], description="Word highlight attributions")
 
 @app.post("/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 @app.post("/api/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 async def predict_article(request: PredictionRequest):
-    """
-    Predicts whether a news article is Real or Fake using the fine-tuned DistilBERT model.
-    Includes Google Fact Check verification and LIME-like attribution explainability highlights.
-    """
     try:
-        cleaned_text = clean_text_bert(request.text)
+        # Graceful check for short headlines (Requirement 9)
+        word_count = len(request.text.split())
+        is_short = word_count < 8
         
-        # 1. DistilBERT Prediction
-        prob_real = 0.5
-        prob_fake = 0.5
-        if not tokenizer or not model:
-            print("WARNING: DistilBERT model not loaded. Falling back to default confidence response.")
-            verdict = "Real"
+        # 1. Machine Learning Inference
+        if not model or not vectorizer:
+            print("WARNING: Model artifacts not loaded. Falling back to default baseline estimates.")
+            prob_real_pct = 50.0
+            prob_fake_pct = 50.0
+            ml_pred = "Real"
             confidence_pct = 50.0
         else:
-            import torch
-            # Tokenize text
-            inputs = tokenizer(cleaned_text, return_tensors="pt", truncation=True, max_length=256, padding=True)
-            
-            # Run inference
-            with torch.no_grad():
-                outputs = model(**inputs)
-                logits = outputs.logits
+            cleaned_text = clean_text(request.text)
+            if not cleaned_text:
+                cleaned_text = "empty text fallback"
                 
-            # Apply Softmax to get probabilities
-            probs = torch.softmax(logits, dim=-1).squeeze().tolist()
-            prob_real = probs[0]
-            prob_fake = probs[1]
+            X_text = vectorizer.transform([cleaned_text])
+            probs = model.predict_proba(X_text)[0] # [probability_real, probability_fake]
             
-            verdict = "Real" if prob_real >= 0.5 else "Fake"
-            confidence = prob_real if verdict == "Real" else prob_fake
-            confidence_pct = round(confidence * 100, 1)
+            prob_real_pct = round(probs[0] * 100, 1)
+            prob_fake_pct = round(probs[1] * 100, 1)
             
+            if is_short:
+                # Override to low confidence if text is extremely short (Requirement 9)
+                prob_real_pct = 50.0
+                prob_fake_pct = 50.0
+                ml_pred = "Real"
+                confidence_pct = 50.0
+            else:
+                ml_pred = "Real" if prob_real_pct >= 50.0 else "Fake"
+                confidence_pct = prob_real_pct if ml_pred == "Real" else prob_fake_pct
+                
         # 2. Google Fact Check Verification
         search_query = extract_search_query(request.text)
         fact_check_result = fetch_fact_check(search_query)
         
-        # Classify the fact check rating if found
         fact_check_category = "NONE"
+        fc_status = "No verified fact check available."
+        fc_pub = None
+        fc_url = None
+        fc_date = None
+        
         if fact_check_result:
             fact_check_category = get_fact_check_verdict_category(fact_check_result["verdict"])
+            fc_status = fact_check_result["verdict"]
+            fc_pub = fact_check_result["publisher"]
+            fc_url = fact_check_result["source_link"]
+            fc_date = fact_check_result.get("date")
             
-        # 3. Hybrid Decision Engine Precedence Rules
-        if fact_check_category == "FALSE":
-            final_verdict = "Fake"
-            is_uncertain = False
-        elif fact_check_category == "TRUE":
-            final_verdict = "Verified Real"
-            is_uncertain = False
+        # 3. Hybrid Decision Engine
+        if fact_check_category == "TRUE":
+            final_verdict = "VERIFIED REAL"
+        elif fact_check_category == "FALSE":
+            final_verdict = "FAKE"
         else:
-            # Fact check has no result (NONE)
-            if confidence_pct > 90.0:
-                final_verdict = verdict
-                is_uncertain = False
+            # No Google Fact Check matches
+            if confidence_pct >= 80.0:
+                final_verdict = ml_pred
+            elif 60.0 <= confidence_pct < 80.0:
+                final_verdict = "Likely Real" if ml_pred == "Real" else "Likely Fake"
             else:
                 final_verdict = "Prediction Uncertain"
-                is_uncertain = True
                 
-        # 4. LIME Explainability Highlights
-        highlights = []
-        if tokenizer and model:
-            highlights = explain_text_lime(cleaned_text, prob_real)
+        # 4. News Verification Fallback
+        similar_news = []
+        if not fact_check_result:
+            similar_news = fetch_similar_news_newsapi(search_query)
             
-        # Format fact check response parameters
-        fc_status = fact_check_result["verdict"] if fact_check_result else "No verified fact check found."
-        fc_pub = fact_check_result["publisher"] if fact_check_result else None
-        fc_url = fact_check_result["source_link"] if fact_check_result else None
-        fc_date = fact_check_result.get("date") if fact_check_result else None
-        
+        # 5. Credibility Score & Risk Level calculation
+        if final_verdict in ["Real", "VERIFIED REAL", "Likely Real"]:
+            if confidence_pct > 90.0:
+                credibility_score = round(95.0 + (confidence_pct - 90.0) * 0.5, 1)
+                risk_level = "Low"
+            elif 75.0 <= confidence_pct <= 90.0:
+                credibility_score = round(80.0 + (confidence_pct - 75.0) * 14.0 / 15.0, 1)
+                risk_level = "Medium"
+            else:
+                # Confidence < 75%
+                credibility_score = round((confidence_pct / 75.0) * 79.0, 1)
+                risk_level = "High"
+        elif final_verdict in ["Fake", "FAKE", "Likely Fake"]:
+            risk_level = "High"
+            if confidence_pct > 90.0:
+                credibility_score = round(100.0 - (95.0 + (confidence_pct - 90.0) * 0.5), 1)
+            elif 75.0 <= confidence_pct <= 90.0:
+                credibility_score = round(100.0 - (80.0 + (confidence_pct - 75.0) * 14.0 / 15.0), 1)
+            else:
+                credibility_score = round(100.0 - ((confidence_pct / 75.0) * 79.0), 1)
+        else:
+            # Prediction Uncertain
+            credibility_score = 50.0
+            risk_level = "Medium"
+            
+        # 6. Attributions & Explanations
+        explanations_list = []
+        if final_verdict in ["Real", "VERIFIED REAL", "Likely Real"]:
+            if confidence_pct >= 75.0:
+                explanations_list.append("Professional journalistic writing detected.")
+            if final_verdict == "VERIFIED REAL":
+                explanations_list.append("Matches verified news patterns.")
+        elif final_verdict in ["Fake", "FAKE", "Likely Fake"]:
+            explanations_list.append("Contains sensational or clickbait language.")
+            explanations_list.append("Contains conspiracy-style phrases.")
+        else:
+            explanations_list.append("Low contextual certainty.")
+            
+        if similar_news:
+            explanations_list.append("Similar to verified news patterns.")
+            
+        highlights = []
+        if model and vectorizer:
+            cleaned_text = clean_text(request.text)
+            highlights = explain_text_perturbation(cleaned_text, prob_real_pct)
+            
         return PredictionResponse(
             prediction=final_verdict,
-            ml_prediction=verdict,
             confidence=confidence_pct,
-            uncertain=is_uncertain,
+            probability_real=prob_real_pct,
+            probability_fake=prob_fake_pct,
+            credibility_score=credibility_score,
+            risk_level=risk_level,
             fact_check_status=fc_status,
             publisher=fc_pub,
             review_url=fc_url,
             published_date=fc_date,
+            similar_news=similar_news,
+            explanation=explanations_list,
             highlights=highlights
         )
-        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"DistilBERT classification failed: {str(e)}"
+            detail=f"Classification endpoint error: {str(e)}"
         )
 
 @app.get("/api/news", status_code=status.HTTP_200_OK)
 async def get_latest_news(q: Optional[str] = None, category: Optional[str] = None):
-    """
-    Proxy route for NewsAPI queries, restricted to BBC, Reuters, The Hindu, Indian Express, NDTV, and CNN.
-    Supports keywords and category keyword filtering.
-    """
     try:
         domains = "bbc.co.uk,bbc.com,reuters.com,thehindu.com,indianexpress.com,ndtv.com,cnn.com"
-        
-        # Build search query by combining q and category
         search_terms = []
         if q:
             search_terms.append(q)
@@ -334,14 +391,9 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
         else:
             url = f"https://newsapi.org/v2/everything?domains={domains}&language=en&sortBy=publishedAt&pageSize=12&apiKey={NEWS_API_KEY}"
             
-        req = urllib.request.Request(
-            url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.2"}
-        )
-        
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=4.0) as response:
             res_data = json.loads(response.read().decode("utf-8"))
-            
         return res_data
     except Exception as e:
         raise HTTPException(
@@ -351,9 +403,6 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
-    """
-    Health check endpoint to verify server status.
-    """
     is_model_ready = model is not None
     return {
         "status": "online" if is_model_ready else "degraded",

@@ -82,16 +82,30 @@ function simulatePrediction(text) {
     }
   });
 
+  const pred = isFake ? 'Fake' : 'Real';
+  const score = isFake ? Math.max(5, 100 - confidence) : confidence;
+  const risk = score >= 75 ? 'Low' : score >= 40 ? 'Medium' : 'High';
+
   return {
-    prediction: isFake ? 'Fake' : 'Real',
+    prediction: pred,
     confidence: confidence,
+    probability_real: Math.round(realProb * 100),
+    probability_fake: Math.round(fakeProb * 100),
     probabilities: {
       Real: Math.round(realProb * 100),
       Fake: Math.round(fakeProb * 100)
     },
+    credibility_score: score,
+    risk_level: risk,
+    similar_news: [],
+    explanation: [
+      isFake ? 'Contains sensational or clickbait language.' : 'Professional journalistic writing detected.',
+      'Analysis based on local heuristic keyword matching.'
+    ],
     isMock: true,
     timestamp: new Date().toISOString(),
-    highlights: highlights
+    highlights: highlights,
+    text: text
   };
 }
 
@@ -113,14 +127,10 @@ export async function predictNews(text) {
     let rawConf = data.confidence;
     let confidence = rawConf <= 1 ? Math.round(rawConf * 100) : Math.round(rawConf);
     
-    let probReal = data.probabilities?.Real || (data.prediction === 'Real' ? confidence : 100 - confidence);
-    let probFake = data.probabilities?.Fake || (data.prediction === 'Fake' ? confidence : 100 - confidence);
+    let probReal = data.probability_real !== undefined ? data.probability_real : (data.prediction === 'Real' ? confidence : 100 - confidence);
+    let probFake = data.probability_fake !== undefined ? data.probability_fake : (data.prediction === 'Fake' ? confidence : 100 - confidence);
 
-    // Normalize probabilities to 0-100
-    probReal = probReal <= 1 ? Math.round(probReal * 100) : Math.round(probReal);
-    probFake = probFake <= 1 ? Math.round(probFake * 100) : Math.round(probFake);
-
-    let isFactCheckFound = data.fact_check_status && data.fact_check_status !== "No verified fact check found.";
+    let isFactCheckFound = data.fact_check_status && data.fact_check_status !== "No verified fact check available." && data.fact_check_status !== "No verified fact check found.";
     let factCheckObj = isFactCheckFound ? {
       claim_title: "Extracted Claim Match",
       verdict: data.fact_check_status,
@@ -130,19 +140,26 @@ export async function predictNews(text) {
     } : null;
 
     let displayPrediction = data.prediction;
-    if (displayPrediction === 'Verified Real') {
+    if (displayPrediction === 'Verified Real' || displayPrediction === 'VERIFIED REAL') {
       displayPrediction = '✓ VERIFIED REAL';
+    } else if (displayPrediction === 'FAKE') {
+      displayPrediction = 'Fake';
     }
 
     return {
       prediction: displayPrediction,
-      ml_prediction: data.ml_prediction || data.prediction,
+      ml_prediction: data.ml_prediction || (displayPrediction.includes('Real') ? 'Real' : 'Fake'),
       confidence: confidence,
-      uncertain: data.uncertain || false,
+      probability_real: probReal,
+      probability_fake: probFake,
       probabilities: {
         Real: probReal,
         Fake: probFake
       },
+      credibility_score: data.credibility_score !== undefined ? data.credibility_score : confidence,
+      risk_level: data.risk_level || (confidence >= 75 ? 'Low' : 'Medium'),
+      similar_news: data.similar_news || [],
+      explanation: data.explanation || [],
       isMock: false,
       fact_check: factCheckObj,
       timestamp: new Date().toISOString(),

@@ -164,14 +164,15 @@ export default function ResultCard({ result, loading }) {
           const cleanToken = token.trim().toLowerCase();
           if (cleanToken && highlightMap[cleanToken]) {
             const supports = highlightMap[cleanToken];
-            const isReal = supports === 'Real';
             return (
               <span 
                 key={idx} 
                 className={`px-1 rounded font-semibold border ${
-                  isReal 
+                  supports === 'Real' 
                     ? 'bg-brand-green/20 text-brand-green border-brand-green/40' 
-                    : 'bg-red-500/20 text-red-400 border-red-500/40'
+                    : supports === 'Fake'
+                      ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                      : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
                 }`}
                 title={`Supports ${supports}`}
               >
@@ -228,13 +229,15 @@ export default function ResultCard({ result, loading }) {
             {prediction}
           </h4>
           <p className="text-text-secondary text-xs mt-1.5 px-4 max-w-xs mx-auto leading-relaxed">
-            {isVerifiedReal
-              ? 'Overridden by confirmed Google Fact Check database. Fact-checkers verify this claim as true.'
-              : isUncertain
-                ? 'Linguistic style displays mixed structural features, making a confident classification impossible.'
-                : isFake 
-                  ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
-                  : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.'}
+            {result.explanation && result.explanation.length > 0
+              ? result.explanation.join(' ')
+              : (isVerifiedReal
+                  ? 'Overridden by confirmed Google Fact Check database. Fact-checkers verify this claim as true.'
+                  : isUncertain
+                    ? 'Linguistic style displays mixed structural features, making a confident classification impossible.'
+                    : isFake 
+                      ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
+                      : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.')}
           </p>
         </div>
 
@@ -342,6 +345,10 @@ export default function ResultCard({ result, loading }) {
                 <span className="w-2.5 h-2.5 rounded bg-red-500/20 border border-red-500/45 inline-block" />
                 Supports Fake
               </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded bg-yellow-500/20 border border-yellow-500/45 inline-block" />
+                Neutral
+              </span>
             </div>
           </div>
         )}
@@ -445,10 +452,40 @@ export default function ResultCard({ result, loading }) {
               </div>
             </div>
           ) : (
-            <div className="py-4 px-4 rounded-xl bg-slate-950/20 border border-dark-border/20 text-center">
-              <span className="text-text-muted text-xs font-semibold">
-                No verified fact check available.
-              </span>
+            <div className="space-y-3">
+              <div className="py-3 px-4 rounded-xl bg-slate-950/20 border border-dark-border/20 text-center">
+                <span className="text-text-muted text-xs font-semibold">
+                  No verified fact check available.
+                </span>
+              </div>
+              
+              {result.similar_news && result.similar_news.length > 0 && (
+                <div className="space-y-2.5">
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block">
+                    Similar Articles Found (Trusted Sources)
+                  </span>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {result.similar_news.map((item, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-slate-950/45 border border-dark-border/30 text-xs leading-relaxed space-y-1 hover:border-brand-green/20 transition-colors">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-brand-green uppercase tracking-wide">
+                            {item.source}
+                          </span>
+                          <span className="text-[10px] text-text-muted font-mono">
+                            {formatReviewDate(item.published_date)}
+                          </span>
+                        </div>
+                        <h5 className="font-medium text-text-primary hover:text-brand-green transition-colors">
+                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="flex items-start gap-1">
+                            {item.headline}
+                            <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                          </a>
+                        </h5>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
