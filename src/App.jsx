@@ -145,13 +145,16 @@ function App() {
 
   const handleVerifyNews = (text) => {
     setExternalText(text);
-    addToast('Article text copied into analyzer. Ready to verify.', 'info');
+    addToast('Article copied. Triggering automatic AI analysis...', 'info');
     
     // Smooth scroll back to input form
     const element = document.getElementById('analyze');
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
     }
+    
+    // Automatically trigger the classification
+    handlePredict(text);
   };
 
 

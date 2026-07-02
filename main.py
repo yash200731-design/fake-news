@@ -234,18 +234,25 @@ async def predict_article(request: PredictionRequest):
 @app.get("/api/news", status_code=status.HTTP_200_OK)
 async def get_latest_news(q: Optional[str] = None, category: Optional[str] = None):
     """
-    Proxy route for NewsAPI queries.
+    Proxy route for NewsAPI queries, restricted to BBC, Reuters, The Hindu, Indian Express, NDTV, and CNN.
+    Supports keywords and category keyword filtering.
     """
     try:
-        if not q and not category:
-            category = "general"
-            
+        domains = "bbc.co.uk,bbc.com,reuters.com,thehindu.com,indianexpress.com,ndtv.com,cnn.com"
+        
+        # Build search query by combining q and category
+        search_terms = []
         if q:
-            quoted_q = urllib.parse.quote(q)
-            url = f"https://newsapi.org/v2/everything?q={quoted_q}&language=en&pageSize=12&apiKey={NEWS_API_KEY}"
+            search_terms.append(q)
+        if category and category.lower() != 'all':
+            search_terms.append(category)
+            
+        if search_terms:
+            combined_q = " ".join(search_terms)
+            quoted_q = urllib.parse.quote(combined_q)
+            url = f"https://newsapi.org/v2/everything?q={quoted_q}&domains={domains}&language=en&pageSize=12&apiKey={NEWS_API_KEY}"
         else:
-            category_param = f"&category={category}" if category else ""
-            url = f"https://newsapi.org/v2/top-headlines?country=us{category_param}&pageSize=12&apiKey={NEWS_API_KEY}"
+            url = f"https://newsapi.org/v2/everything?domains={domains}&language=en&sortBy=publishedAt&pageSize=12&apiKey={NEWS_API_KEY}"
             
         req = urllib.request.Request(
             url, 
