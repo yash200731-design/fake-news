@@ -80,22 +80,73 @@ def main():
     true_df['label'] = 0
     fake_df['label'] = 1
 
-    # Combine datasets
-    df = pd.concat([true_df, fake_df], ignore_index=True)
-    print(f"Total articles loaded: {len(df)} (True: {len(true_df)}, Fake: {len(fake_df)})")
+    # Combine ISOT datasets
+    df_isot = pd.concat([true_df, fake_df], ignore_index=True)
+    df_isot = df_isot[['title', 'text', 'label']]
+    print(f"ISOT articles loaded: {len(df_isot)} (True: {len(true_df)}, Fake: {len(fake_df)})")
+
+    # Load additional fake news dataset from Kaggle/Datacamp S3 link
+    datacamp_path = "fake_or_real_news.csv"
+    if not os.path.exists(datacamp_path):
+        print("Downloading additional fake news dataset from S3...")
+        try:
+            url = "https://s3.amazonaws.com/assets.datacamp.com/blog_assets/fake_or_real_news.csv"
+            df_datacamp_raw = pd.read_csv(url)
+            df_datacamp_raw.to_csv(datacamp_path, index=False)
+            print("Additional dataset downloaded and saved locally.")
+        except Exception as e:
+            print(f"WARNING: Failed to download additional dataset: {str(e)}. Proceeding with ISOT only.")
+            df_datacamp_raw = pd.DataFrame(columns=['title', 'text', 'label'])
+    else:
+        print("Loading additional fake news dataset from local cache...")
+        df_datacamp_raw = pd.read_csv(datacamp_path)
+
+    if not df_datacamp_raw.empty:
+        # Map labels to 0 and 1 (Dataset uses 'REAL'/'FAKE')
+        df_datacamp_raw['label'] = df_datacamp_raw['label'].map({'REAL': 0, 'FAKE': 1})
+        df_datacamp_clean = df_datacamp_raw[['title', 'text', 'label']].dropna()
+        print(f"Additional dataset loaded: {len(df_datacamp_clean)} rows")
+        df_combined = pd.concat([df_isot, df_datacamp_clean], ignore_index=True)
+    else:
+        df_combined = df_isot
+
+    print(f"Combined dataset size: {len(df_combined)}")
+
+    # 1. Merge duplicate articles based on text content
+    print("Merging duplicate articles...")
+    df_combined.drop_duplicates(subset=['text'], keep='first', inplace=True)
+    df_combined.drop_duplicates(subset=['title', 'text'], keep='first', inplace=True)
+    print(f"Dataset size after deduplication: {len(df_combined)}")
+
+    # 2. Balance Fake and Real classes
+    print("Balancing Fake and Real classes...")
+    fake_subset = df_combined[df_combined['label'] == 1]
+    real_subset = df_combined[df_combined['label'] == 0]
+    print(f"Class sizes before balancing - Real: {len(real_subset)}, Fake: {len(fake_subset)}")
+    
+    min_size = min(len(fake_subset), len(real_subset))
+    fake_balanced = fake_subset.sample(n=min_size, random_state=42)
+    real_balanced = real_subset.sample(n=min_size, random_state=42)
+    
+    df_balanced = pd.concat([fake_balanced, real_balanced], ignore_index=True)
+    print(f"Balanced dataset size: {len(df_balanced)} (Real: {min_size}, Fake: {min_size})")
+
+    # 3. Shuffle before training
+    print("Shuffling balanced dataset before training...")
+    df_final = df_balanced.sample(frac=1, random_state=42).reset_index(drop=True)
 
     # Combine title and text columns
-    print("Combining title and text...")
-    df['combined_text'] = df['title'] + " " + df['text']
+    print("Combining title and text columns...")
+    df_final['combined_text'] = df_final['title'] + " " + df_final['text']
 
     # Preprocess text
-    print("Preprocessing, cleaning and lemmatizing text (this may take 1-2 minutes)...")
+    print("Preprocessing, cleaning and lemmatizing text...")
     start_time = time.time()
-    df['cleaned_text'] = df['combined_text'].apply(clean_and_lemmatize)
+    df_final['cleaned_text'] = df_final['combined_text'].apply(clean_and_lemmatize)
     print(f"Preprocessing completed in {time.time() - start_time:.2f}s")
 
     # Split into train/test sets (80% train, 20% test)
-    train_df, test_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df['label'])
+    train_df, test_df = train_test_split(df_final, test_size=0.2, random_state=42, stratify=df_final['label'])
 
     # TF-IDF Feature Engineering
     print("Initializing TF-IDF vectorizer (max_features=50000)...")
