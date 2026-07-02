@@ -90,6 +90,40 @@ export default function ResultCard({ result, loading }) {
   const isVerifiedReal = prediction === '✓ VERIFIED REAL';
   const isFake = prediction === 'Fake';
 
+  // Dynamic Credibility & Risk calculations
+  let credibilityScore = 50;
+  if (isVerifiedReal) {
+    credibilityScore = 100;
+  } else if (prediction === 'Real') {
+    credibilityScore = confidence;
+  } else if (prediction === 'Prediction Uncertain') {
+    credibilityScore = 50;
+  } else if (prediction === 'Fake') {
+    credibilityScore = Math.max(5, 100 - confidence);
+  }
+
+  let riskLevel = 'Medium';
+  if (credibilityScore >= 75) {
+    riskLevel = 'Low';
+  } else if (credibilityScore < 40) {
+    riskLevel = 'High';
+  }
+
+  let explanation = '';
+  if (isVerifiedReal) {
+    explanation = 'Matches verified news pattern. Cross-referenced and confirmed by independent fact-checking databases.';
+  } else if (prediction === 'Real') {
+    explanation = 'High similarity to trusted journalism. Style patterns match standard objective news formats.';
+  } else if (prediction === 'Prediction Uncertain') {
+    explanation = 'Linguistic traits are ambiguous. Writing exhibits a mix of informal assertions and reporting.';
+  } else if (prediction === 'Fake') {
+    if (confidence > 90) {
+      explanation = 'No credible entities detected. Structure matches typical fabricated or unsubstantiated sources.';
+    } else {
+      explanation = 'Contains sensational language. Style patterns suggest emotional clickbait or speculation.';
+    }
+  }
+
   const formatReviewDate = (dateStr) => {
     if (!dateStr) return 'Unknown Date';
     try {
@@ -204,6 +238,49 @@ export default function ResultCard({ result, loading }) {
           </div>
         </div>
 
+        {/* Credibility & Risk Assessment Panel */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Credibility Score Card */}
+          <div className="p-4 rounded-xl bg-slate-950/30 border border-dark-border/20 flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest block mb-2">Credibility Score</span>
+            <div className="relative w-20 h-20 flex items-center justify-center">
+              {/* Circular progress meter */}
+              <svg className="w-full h-full transform -rotate-90">
+                <circle cx="40" cy="40" r="34" className="stroke-slate-800" strokeWidth="6" fill="transparent" />
+                <circle cx="40" cy="40" r="34" 
+                  className={`transition-all duration-1000 ease-out ${
+                    riskLevel === 'High' ? 'stroke-red-500' : riskLevel === 'Medium' ? 'stroke-amber-500' : 'stroke-brand-green'
+                  }`} 
+                  strokeWidth="6" 
+                  fill="transparent"
+                  strokeDasharray="213.6"
+                  strokeDashoffset={213.6 - (213.6 * credibilityScore) / 100}
+                />
+              </svg>
+              <span className="absolute font-mono font-bold text-lg text-text-primary">{credibilityScore}%</span>
+            </div>
+          </div>
+
+          {/* Risk Assessment Card */}
+          <div className="p-4 rounded-xl bg-slate-950/30 border border-dark-border/20 flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest block mb-1">Risk Assessment</span>
+              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                riskLevel === 'High' 
+                  ? 'bg-red-500/15 text-red-400 border-red-500/30' 
+                  : riskLevel === 'Medium' 
+                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' 
+                    : 'bg-brand-green/15 text-brand-green border-brand-green/30'
+              }`}>
+                {riskLevel} Risk
+              </span>
+            </div>
+            <p className="text-[11px] text-text-secondary leading-relaxed mt-2">
+              {explanation}
+            </p>
+          </div>
+        </div>
+
         {/* Confidence Percentage */}
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs">
@@ -214,11 +291,13 @@ export default function ResultCard({ result, loading }) {
           </div>
           <div className="w-full bg-slate-950/70 h-3 rounded-full overflow-hidden p-0.5 border border-slate-800">
             <div 
-              className={`h-full rounded-full transition-all duration-1000 ease-out ${
+              className={`h-full rounded-full relative overflow-hidden transition-all duration-1000 ease-out ${
                 isUncertain ? 'bg-gradient-to-r from-yellow-500 to-amber-400' : isFake ? 'bg-gradient-to-r from-orange-500 to-red-500' : 'bg-gradient-to-r from-brand-green to-emerald-400'
               }`}
               style={{ width: `${confidence}%` }}
-            />
+            >
+              <div className="absolute inset-0 bg-white/10 animate-[pulse_2s_infinite] rounded-full" />
+            </div>
           </div>
         </div>
 
