@@ -145,6 +145,46 @@ export default function ResultCard({ result, loading }) {
     return 'bg-blue-500/15 text-brand-blue-light border-blue-500/20';
   };
 
+  const renderHighlightedText = () => {
+    if (!result.highlights || result.highlights.length === 0) {
+      return null;
+    }
+
+    const textStr = result.text || '';
+    const highlightMap = {};
+    result.highlights.forEach(h => {
+      highlightMap[h.word.toLowerCase()] = h.supports;
+    });
+
+    const tokens = textStr.split(/(\s+|\b)/);
+
+    return (
+      <div className="p-3.5 rounded-xl bg-slate-950/50 border border-dark-border/20 text-xs leading-relaxed max-h-44 overflow-y-auto font-sans text-text-secondary select-text">
+        {tokens.map((token, idx) => {
+          const cleanToken = token.trim().toLowerCase();
+          if (cleanToken && highlightMap[cleanToken]) {
+            const supports = highlightMap[cleanToken];
+            const isReal = supports === 'Real';
+            return (
+              <span 
+                key={idx} 
+                className={`px-1 rounded font-semibold border ${
+                  isReal 
+                    ? 'bg-brand-green/20 text-brand-green border-brand-green/40' 
+                    : 'bg-red-500/20 text-red-400 border-red-500/40'
+                }`}
+                title={`Supports ${supports}`}
+              >
+                {token}
+              </span>
+            );
+          }
+          return <span key={idx}>{token}</span>;
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className={`w-full glass-panel rounded-2xl p-6 sm:p-8 border transition-all duration-500 h-full flex flex-col justify-between ${
       isUncertain
@@ -280,6 +320,31 @@ export default function ResultCard({ result, loading }) {
             </p>
           </div>
         </div>
+
+        {/* LIME Explainability Highlights */}
+        {result.highlights && result.highlights.length > 0 && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest block">
+                LIME Explainability Report
+              </span>
+              <span className="text-[9px] text-text-muted italic">Attribution Highlights</span>
+            </div>
+            
+            {renderHighlightedText()}
+            
+            <div className="flex flex-wrap gap-3 text-[10px] text-text-secondary mt-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded bg-brand-green/20 border border-brand-green/45 inline-block" />
+                Supports Real
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded bg-red-500/20 border border-red-500/45 inline-block" />
+                Supports Fake
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Confidence Percentage */}
         <div className="space-y-1">

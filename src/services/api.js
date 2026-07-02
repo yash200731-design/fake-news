@@ -61,10 +61,27 @@ function simulatePrediction(text) {
     }
   }
 
-  // Format probabilities to percentages (0-100)
   const isFake = fakeProb > realProb;
   const confidence = Math.round((isFake ? fakeProb : realProb) * 100);
-  
+
+  const highlights = [];
+  const words = text.split(/\W+/);
+  const added = new Set();
+  words.forEach(w => {
+    const wl = w.toLowerCase();
+    if (wl.length >= 4 && !added.has(wl) && highlights.length < 6) {
+      const matchesFake = fakeKeywords.some(k => k.includes(wl));
+      const matchesReal = realKeywords.some(k => k.includes(wl));
+      if (matchesFake) {
+        highlights.push({ word: w, score: 0.12, supports: "Fake" });
+        added.add(wl);
+      } else if (matchesReal) {
+        highlights.push({ word: w, score: 0.15, supports: "Real" });
+        added.add(wl);
+      }
+    }
+  });
+
   return {
     prediction: isFake ? 'Fake' : 'Real',
     confidence: confidence,
@@ -73,7 +90,8 @@ function simulatePrediction(text) {
       Fake: Math.round(fakeProb * 100)
     },
     isMock: true,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    highlights: highlights
   };
 }
 
@@ -127,7 +145,9 @@ export async function predictNews(text) {
       },
       isMock: false,
       fact_check: factCheckObj,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      text: text,
+      highlights: data.highlights || []
     };
   } catch (error) {
     // If it's a backend response error, throw the exact backend message

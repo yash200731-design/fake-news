@@ -5,7 +5,7 @@ import urllib.request
 import urllib.parse
 import json
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -86,6 +86,72 @@ def get_fact_check_verdict_category(verdict_text: str) -> str:
         return "TRUE"
     return "NONE"
 
+def explain_text_lime(text: str, original_prob_real: float, num_features: int = 15) -> list:
+    """
+    Runs a lightweight LIME-like perturbation check to determine word importance.
+    """
+    global tokenizer, model
+    if not tokenizer or not model:
+        return []
+        
+    try:
+        import torch
+        # Clean and tokenize words of length >= 4
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', text)
+        
+        # Standard english stopwords list
+        stopwords = {
+            "the", "and", "a", "of", "to", "is", "in", "that", "it", "he", "was", "for", "on", 
+            "are", "as", "with", "his", "they", "i", "at", "be", "this", "have", "from", "or", 
+            "one", "had", "by", "word", "but", "not", "what", "all", "were", "we", "when", 
+            "your", "can", "said", "there", "use", "an", "each", "which", "she", "do", "how", 
+            "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", 
+            "these", "so", "some", "her", "would", "make", "like", "him", "into", "time", 
+            "has", "look", "two", "more", "write", "go", "see", "number", "no", "way", 
+            "could", "people", "my", "than", "first", "water", "been", "call", "who", "oil", 
+            "its", "now", "find", "long", "down", "day", "did", "get", "come", "made", "may", 
+            "part", "news", "said", "also", "would", "about", "were"
+        }
+        
+        unique_words = list(set([w for w in words if w.lower() not in stopwords]))[:30]
+        if not unique_words:
+            return []
+            
+        # Create perturbed variations of text
+        perturbed_texts = []
+        for word in unique_words:
+            pattern = r'\b' + re.escape(word) + r'\b'
+            perturbed_text = re.sub(pattern, '[MASK]', text, flags=re.IGNORECASE)
+            perturbed_texts.append(perturbed_text)
+            
+        # Batch inference
+        inputs = tokenizer(perturbed_texts, return_tensors="pt", truncation=True, max_length=256, padding=True)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits
+            
+        probs = torch.softmax(logits, dim=-1).tolist()
+        
+        highlights = []
+        for i, word in enumerate(unique_words):
+            perturbed_prob_real = probs[i][0]
+            diff = original_prob_real - perturbed_prob_real
+            
+            if abs(diff) > 0.001:
+                supports = "Real" if diff > 0 else "Fake"
+                highlights.append({
+                    "word": word,
+                    "score": round(abs(diff), 4),
+                    "supports": supports
+                })
+                
+        # Sort by importance magnitude
+        highlights = sorted(highlights, key=lambda x: x["score"], reverse=True)[:num_features]
+        return highlights
+    except Exception as e:
+        print(f"LIME explainability warning: {str(e)}")
+        return []
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -115,8 +181,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="VeriTruth AI - Fake News Detection API",
-    description="FastAPI service utilizing a Hugging Face DistilBERT Transformer fake news classifier and Google Fact Check API.",
-    version="2.2.0",
+    description="FastAPI service utilizing a Hugging Face DistilBERT Transformer, Google Fact Check API, and LIME Explainability.",
+    version="2.3.0",
     lifespan=lifespan
 )
 
@@ -138,28 +204,36 @@ class PredictionRequest(BaseModel):
         description="The full content of the news article to predict."
     )
 
+class HighlightFeature(BaseModel):
+    word: str = Field(..., description="The word analyzed")
+    score: float = Field(..., description="Explainability attribution score")
+    supports: str = Field(..., description="Class supported: 'Real' or 'Fake'")
+
 # Output Pydantic Model for API response validation
 class PredictionResponse(BaseModel):
-    prediction: str = Field(..., description="Final Verdict: 'Fake', 'Verified Real', 'Real' (or whatever ML predicted), or 'Prediction Uncertain'")
-    ml_prediction: str = Field(..., description="Raw Machine Learning Prediction: 'Real' or 'Fake'")
-    confidence: float = Field(..., description="Model confidence score as a percentage (0.0 to 100.0)")
+    prediction: str = Field(..., description="Final Verdict")
+    ml_prediction: str = Field(..., description="Raw Machine Learning Prediction")
+    confidence: float = Field(..., description="Model confidence score")
     uncertain: bool = Field(..., description="True if final verdict is Prediction Uncertain")
-    fact_check_status: str = Field(..., description="Google Fact Check status verdict or 'No verified fact check found.'")
+    fact_check_status: str = Field(..., description="Google Fact Check Status")
     publisher: Optional[str] = Field(None, description="Fact check publisher")
     review_url: Optional[str] = Field(None, description="URL of the fact check review")
     published_date: Optional[str] = Field(None, description="Published date of the claim review")
+    highlights: List[HighlightFeature] = Field(default=[], description="LIME explainability highlights")
 
 @app.post("/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 @app.post("/api/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 async def predict_article(request: PredictionRequest):
     """
     Predicts whether a news article is Real or Fake using the fine-tuned DistilBERT model.
-    Also queries the Google Fact Check API to execute hybrid decision engine rules.
+    Includes Google Fact Check verification and LIME-like attribution explainability highlights.
     """
     try:
         cleaned_text = clean_text_bert(request.text)
         
         # 1. DistilBERT Prediction
+        prob_real = 0.5
+        prob_fake = 0.5
         if not tokenizer or not model:
             print("WARNING: DistilBERT model not loaded. Falling back to default confidence response.")
             verdict = "Real"
@@ -202,12 +276,17 @@ async def predict_article(request: PredictionRequest):
         else:
             # Fact check has no result (NONE)
             if confidence_pct > 90.0:
-                final_verdict = verdict # Show ML prediction ("Real" or "Fake")
+                final_verdict = verdict
                 is_uncertain = False
             else:
                 final_verdict = "Prediction Uncertain"
                 is_uncertain = True
                 
+        # 4. LIME Explainability Highlights
+        highlights = []
+        if tokenizer and model:
+            highlights = explain_text_lime(cleaned_text, prob_real)
+            
         # Format fact check response parameters
         fc_status = fact_check_result["verdict"] if fact_check_result else "No verified fact check found."
         fc_pub = fact_check_result["publisher"] if fact_check_result else None
@@ -222,7 +301,8 @@ async def predict_article(request: PredictionRequest):
             fact_check_status=fc_status,
             publisher=fc_pub,
             review_url=fc_url,
-            published_date=fc_date
+            published_date=fc_date,
+            highlights=highlights
         )
         
     except Exception as e:
