@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import math
 import urllib.request
 import urllib.parse
 import json
@@ -9,14 +10,11 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import joblib
 
-# Global variables for model artifacts
-model = None
-vectorizer = None
+# Global variable for model parameters JSON
+model_data = None
 FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
 NEWS_API_KEY = "1fa513057c4d4684887264914f35d197"
-
 
 # Identical STOPWORDS definition to ensure training and inference consistency
 STOPWORDS = {
@@ -72,32 +70,29 @@ def clean_text(text: str) -> str:
 async def lifespan(app: FastAPI):
     """
     Context manager to handle startup and shutdown events.
-    Loads the trained model and vectorizer at application startup.
+    Loads the trained model parameters from model_data.json.
     """
-    global model, vectorizer
+    global model_data
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(base_dir, "model.pkl")
-    vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
-
+    model_path = os.path.join(base_dir, "model_data.json")
     
-    if not os.path.exists(model_path) or not os.path.exists(vectorizer_path):
-        print(f"CRITICAL ERROR: Model artifacts ('{model_path}', '{vectorizer_path}') not found!")
-        print("Please execute 'python train_model.py' to train and export the model artifacts first.")
+    if not os.path.exists(model_path):
+        print(f"CRITICAL ERROR: Model parameters JSON ('{model_path}') not found!")
     else:
         try:
-            model = joblib.load(model_path)
-            vectorizer = joblib.load(vectorizer_path)
-            print("SUCCESS: Machine learning model and TF-IDF vectorizer loaded successfully!")
+            with open(model_path, "r") as f:
+                model_data = json.load(f)
+            print("SUCCESS: Pure Python model parameters loaded successfully!")
         except Exception as e:
-            print(f"CRITICAL ERROR: Failed to load model artifacts: {str(e)}")
+            print(f"CRITICAL ERROR: Failed to load model parameters: {str(e)}")
             
     yield
     print("Application shutdown complete.")
 
 app = FastAPI(
     title="VeriTruth AI - Fake News Detection API",
-    description="FastAPI service utilizing a Scikit-Learn Logistic Regression model and Google Fact Check cross-referencing.",
-    version="1.4.0",
+    description="FastAPI service utilizing a pure Python Logistic Regression model and Google Fact Check cross-referencing.",
+    version="1.5.0",
     lifespan=lifespan
 )
 
@@ -199,7 +194,7 @@ def fetch_fact_check(query: str) -> Optional[dict]:
         
         req = urllib.request.Request(
             url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.4"}
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.5"}
         )
         
         with urllib.request.urlopen(req, timeout=2.5) as response:
@@ -227,6 +222,87 @@ def fetch_fact_check(query: str) -> Optional[dict]:
         print(f"WARNING: Google Fact Check Tools API lookup failed or timed out: {str(e)}")
         return None
 
+def predict_pure_python(text: str):
+    """
+    Pure Python implementation of TF-IDF Vectorization and Logistic Regression.
+    Eliminates dependency on heavy C-extension libraries like scikit-learn, numpy, and scipy.
+    """
+    global model_data
+    
+    # Load on-demand if serverless lifespans are skipped (common on Vercel boots)
+    if model_data is None:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(base_dir, "model_data.json")
+        try:
+            with open(model_path, "r") as f:
+                model_data = json.load(f)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Model parameters not found or failed to load: {str(e)}"
+            )
+            
+    vocabulary = model_data["vocabulary"]
+    idf = model_data["idf"]
+    coef = model_data["coef"]
+    intercept = model_data["intercept"]
+    
+    # 1. Clean the text using the exact same clean_text function
+    cleaned = clean_text(text)
+    
+    # 2. Tokenize (matching Sklearn's default tokenizer regex pattern: (?u)\b\w\w+\b)
+    words = re.findall(r'\b\w\w+\b', cleaned.lower())
+    unigrams = words
+    bigrams = [f"{words[i]} {words[i+1]}" for i in range(len(words)-1)]
+    tokens = unigrams + bigrams
+    
+    # 3. Calculate Term Frequencies (raw counts)
+    tf_counts = {}
+    for t in tokens:
+        if t in vocabulary:
+            tf_counts[t] = tf_counts.get(t, 0) + 1
+            
+    # 4. If no tokens match the vocabulary, predict using the default intercept sigmoid probability
+    if not tf_counts:
+        # z = intercept (since all tf_idf values are 0)
+        prob_fake = 1 / (1 + math.exp(-intercept))
+        prob_real = 1 - prob_fake
+        verdict = "Fake" if prob_fake >= 0.5 else "Real"
+        confidence = prob_fake if verdict == "Fake" else prob_real
+        return verdict, confidence, {
+            "Real": prob_real,
+            "Fake": prob_fake
+        }
+        
+    # 5. Multiply by IDF to get raw TF-IDF values
+    tf_idf_raw = {}
+    for term, count in tf_counts.items():
+        idx = vocabulary[term]
+        tf_idf_raw[idx] = count * idf[idx]
+        
+    # 6. Apply L2 normalization to match TfidfVectorizer output format
+    sum_squares = sum(val ** 2 for val in tf_idf_raw.values())
+    l2_norm = math.sqrt(sum_squares)
+    
+    tf_idf_norm = {}
+    for idx, val in tf_idf_raw.items():
+        tf_idf_norm[idx] = val / l2_norm
+        
+    # 7. Compute decision boundary: z = sum(coef[i] * tf_idf[i]) + intercept
+    z = sum(coef[idx] * val for idx, val in tf_idf_norm.items()) + intercept
+    
+    # 8. Apply Sigmoid to get probability of Fake class (Class 1)
+    prob_fake = 1 / (1 + math.exp(-z))
+    prob_real = 1 - prob_fake
+    
+    verdict = "Fake" if prob_fake >= 0.5 else "Real"
+    confidence = prob_fake if verdict == "Fake" else prob_real
+    
+    return verdict, confidence, {
+        "Real": prob_real,
+        "Fake": prob_fake
+    }
+
 @app.post("/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 @app.post("/api/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 async def predict_article(request: PredictionRequest):
@@ -234,46 +310,11 @@ async def predict_article(request: PredictionRequest):
     Predicts whether a news article is Real or Fake based on text structure.
     Also queries the Google Fact Check API to cross-reference known claims.
     """
-    global model, vectorizer
-    
-    # Verify that model artifacts are loaded (or load them on-demand if serverless lifespans are skipped)
-    if model is None or vectorizer is None:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        model_path = os.path.join(base_dir, "model.pkl")
-        vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
-        
-        try:
-            model = joblib.load(model_path)
-            vectorizer = joblib.load(vectorizer_path)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Model artifacts not found or failed to load: {str(e)}"
-            )
-
-        
     start_time = time.time()
     
     try:
-        # Preprocess and clean the text identically to training
-        cleaned_text_content = clean_text(request.text)
-        
-        # Vectorise the cleaned text
-        text_vector = vectorizer.transform([cleaned_text_content])
-        
-        # Predict class index (0 = Real, 1 = Fake)
-        pred_class_idx = int(model.predict(text_vector)[0])
-        
-        # Predict class probabilities
-        probs = model.predict_proba(text_vector)[0]
-        
-        # Map values
-        verdict = "Real" if pred_class_idx == 0 else "Fake"
-        confidence = float(probs[pred_class_idx])
-        probabilities_map = {
-            "Real": float(probs[0]),
-            "Fake": float(probs[1])
-        }
+        # Run classification in pure Python (no sklearn required)
+        verdict, confidence, probabilities_map = predict_pure_python(request.text)
         
         # Extract search query and lookup Google Fact Check API
         search_query = extract_search_query(request.text)
@@ -332,7 +373,7 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
             
         req = urllib.request.Request(
             url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.4"}
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/1.5"}
         )
         
         with urllib.request.urlopen(req, timeout=4.0) as response:
@@ -348,9 +389,9 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
     """
-    Health check endpoint to verify server status and model loading.
+    Health check endpoint to verify server status.
     """
-    is_model_ready = model is not None and vectorizer is not None
+    is_model_ready = model_data is not None
     return {
         "status": "online" if is_model_ready else "degraded",
         "model_loaded": is_model_ready
