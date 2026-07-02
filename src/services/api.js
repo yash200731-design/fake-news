@@ -104,6 +104,7 @@ export async function predictNews(text) {
 
     return {
       prediction: data.prediction,
+      ml_prediction: data.ml_prediction || data.prediction,
       confidence: confidence,
       uncertain: data.uncertain || false,
       probabilities: {

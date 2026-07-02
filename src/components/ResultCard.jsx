@@ -85,8 +85,9 @@ export default function ResultCard({ result, loading }) {
     );
   }
 
-  const { prediction, confidence, probabilities, isMock, fact_check, uncertain } = result;
+  const { prediction, ml_prediction, confidence, probabilities, isMock, fact_check, uncertain } = result;
   const isUncertain = uncertain || prediction === 'Prediction Uncertain';
+  const isVerifiedReal = prediction === '✓ VERIFIED REAL';
   const isFake = prediction === 'Fake';
 
   const formatReviewDate = (dateStr) => {
@@ -145,7 +146,7 @@ export default function ResultCard({ result, loading }) {
         {/* Verdict Badge */}
         <div className="text-center py-4 rounded-xl bg-slate-950/45 border border-dark-border/30">
           <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest block mb-1">
-            Prediction
+            Final Verdict
           </span>
           <h4 className={`font-display font-extrabold text-3xl tracking-wide uppercase ${
             isUncertain ? 'text-amber-500' : isFake ? 'text-red-500' : 'text-brand-green'
@@ -153,12 +154,54 @@ export default function ResultCard({ result, loading }) {
             {prediction}
           </h4>
           <p className="text-text-secondary text-xs mt-1.5 px-4 max-w-xs mx-auto leading-relaxed">
-            {isUncertain
-              ? 'Linguistic style displays mixed structural features, making a confident classification impossible.'
-              : isFake 
-                ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
-                : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.'}
+            {isVerifiedReal
+              ? 'Overridden by confirmed Google Fact Check database. Fact-checkers verify this claim as true.'
+              : isUncertain
+                ? 'Linguistic style displays mixed structural features, making a confident classification impossible.'
+                : isFake 
+                  ? 'High match with clickbait headers, unsubstantiated claims, or conspiracy syntax.'
+                  : 'Consistent with peer-reviewed research structures, press bulletins, and factual reporting.'}
           </p>
+        </div>
+
+        {/* Verification Summary Panel */}
+        <div className="p-4 rounded-xl bg-slate-950/40 border border-dark-border/20 space-y-2.5 text-xs">
+          <div className="flex justify-between items-center pb-2 border-b border-dark-border/10">
+            <span className="text-text-secondary font-semibold">Machine Learning Prediction</span>
+            <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] uppercase border ${
+              (ml_prediction || prediction) === 'Fake' 
+                ? 'bg-red-500/15 text-red-400 border-red-500/20' 
+                : (ml_prediction || prediction) === 'Prediction Uncertain' 
+                  ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' 
+                  : 'bg-brand-green/15 text-brand-green border-brand-green/20'
+            }`}>
+              {ml_prediction || (isFake ? 'Fake' : 'Real')}
+            </span>
+          </div>
+          
+          <div className="flex justify-between items-center pb-2 border-b border-dark-border/10">
+            <span className="text-text-secondary font-semibold">Google Fact Check Result</span>
+            <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] uppercase border ${
+              fact_check 
+                ? getVerdictStyle(fact_check.verdict)
+                : 'bg-slate-800/40 text-slate-400 border-slate-700/40'
+            }`}>
+              {fact_check ? fact_check.verdict : 'No verified fact check'}
+            </span>
+          </div>
+
+          <div className="flex justify-between items-center pt-0.5">
+            <span className="text-text-secondary font-semibold">Final Verdict</span>
+            <span className={`px-2.5 py-0.5 rounded font-mono font-bold text-[10.5px] uppercase border ${
+              isUncertain 
+                ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' 
+                : isFake 
+                  ? 'bg-red-500/15 text-red-400 border-red-500/20' 
+                  : 'bg-brand-green/15 text-brand-green border-brand-green/20'
+            }`}>
+              {prediction}
+            </span>
+          </div>
         </div>
 
         {/* Confidence Percentage */}

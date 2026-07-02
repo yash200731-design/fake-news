@@ -137,12 +137,14 @@ class FactCheckInfo(BaseModel):
 
 # Output Pydantic Model for API response validation
 class PredictionResponse(BaseModel):
-    prediction: str = Field(..., description="Legitimacy verdict: 'Real', 'Fake', or 'Prediction Uncertain'")
+    prediction: str = Field(..., description="Final Verdict: '✓ VERIFIED REAL', 'Fake', or 'Prediction Uncertain'")
+    ml_prediction: str = Field(..., description="Machine Learning Prediction: 'Real', 'Fake', or 'Prediction Uncertain'")
     confidence: float = Field(..., description="Model confidence score as a percentage (0.0 to 100.0)")
     uncertain: bool = Field(..., description="True if prediction confidence is below 75%")
     probabilities: dict = Field(..., description="Probability scores for each class")
     processing_time: float = Field(..., description="Server classification execution time in seconds")
     fact_check: Optional[FactCheckInfo] = Field(None, description="Google Fact Check matches (if found)")
+
 
 
 def extract_search_query(text: str) -> str:
@@ -352,6 +354,7 @@ async def predict_article(request: PredictionRequest):
         processing_duration = round(time.time() - start_time, 4)
         
         fact_check_info = None
+        is_fact_check_true = False
         if fact_check_result:
             fact_check_info = FactCheckInfo(
                 claim_title=fact_check_result["claim_title"],
@@ -360,9 +363,19 @@ async def predict_article(request: PredictionRequest):
                 date=fact_check_result.get("date"),
                 source_link=fact_check_result["source_link"]
             )
+            # Verify if Google Fact Check rating confirms the claim is True
+            v_lower = fact_check_result["verdict"].lower()
+            true_keywords = ["true", "correct", "accurate", "legitimate", "verified", "mostly true", "correct attribution"]
+            false_keywords = ["false", "misleading", "incorrect", "untrue", "fake", "debunked", "partly false"]
+            if any(tk in v_lower for tk in true_keywords) and not any(fk in v_lower for fk in false_keywords):
+                is_fact_check_true = True
+
+        # Override ML prediction if Google Fact Check confirms it is true
+        final_verdict = "✓ VERIFIED REAL" if is_fact_check_true else prediction_label
         
         return PredictionResponse(
-            prediction=prediction_label,
+            prediction=final_verdict,
+            ml_prediction=prediction_label,
             confidence=confidence_pct,
             uncertain=is_uncertain,
             probabilities={
@@ -372,6 +385,7 @@ async def predict_article(request: PredictionRequest):
             processing_time=processing_duration,
             fact_check=fact_check_info
         )
+
 
         
     except Exception as e:
