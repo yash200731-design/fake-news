@@ -4,5 +4,10 @@
       "source": "/api/:path*",
       "destination": "/api/index.py"
     }
-  ]
+  ],
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "model.pkl,vectorizer.pkl,nltk_data/**"
+    }
+  }
 }
