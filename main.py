@@ -100,6 +100,29 @@ def get_fact_check_verdict_category(verdict_text: str) -> str:
         return "TRUE"
     return "NONE"
 
+def fetch_similar_news_newsdata(query: str) -> list:
+    if not query:
+        return []
+    try:
+        apikey = "pub_d48c839184464f51b83396b0a9451b3b"
+        quoted_query = urllib.parse.quote(query)
+        url = f"https://newsdata.io/api/1/latest?apikey={apikey}&language=en&q={quoted_query}&domain=bbc,reuters,thehindu,indianexpress,ndtv,cnn"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=3.5) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+        articles = []
+        for item in res_data.get("results", []):
+            articles.append({
+                "source": item.get("source_id", "Trusted Source").upper(),
+                "headline": item.get("title", ""),
+                "published_date": item.get("pubDate"),
+                "link": item.get("link", "")
+            })
+        return articles[:4]
+    except Exception as e:
+        print(f"NewsData query warning: {str(e)}")
+        return []
+
 def fetch_similar_news_newsapi(query: str) -> list:
     if not query or not NEWS_API_KEY:
         return []
@@ -359,7 +382,9 @@ async def predict_article(request: PredictionRequest):
         # 4. News Verification Fallback
         similar_news = []
         if not fact_check_result:
-            similar_news = fetch_similar_news_newsapi(search_query)
+            similar_news = fetch_similar_news_newsdata(search_query)
+            if not similar_news:
+                similar_news = fetch_similar_news_newsapi(search_query)
             
         # 5. Credibility Score & Risk Level calculation
         if final_verdict in ["Real", "VERIFIED REAL", "Likely Real"]:
@@ -427,32 +452,63 @@ async def predict_article(request: PredictionRequest):
             detail=f"Classification endpoint error: {str(e)}"
         )
 
+def fetch_news_newsdata(q: Optional[str] = None, category: Optional[str] = None) -> dict:
+    apikey = "pub_d48c839184464f51b83396b0a9451b3b"
+    url = f"https://newsdata.io/api/1/latest?apikey={apikey}&language=en"
+    if q:
+        url += f"&q={urllib.parse.quote(q)}"
+    if category and category.lower() != 'all':
+        url += f"&category={urllib.parse.quote(category.lower())}"
+    else:
+        url += "&domain=bbc,reuters,thehindu,indianexpress,ndtv,cnn"
+        
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=4.0) as response:
+        res_data = json.loads(response.read().decode("utf-8"))
+        
+    articles = []
+    for item in res_data.get("results", []):
+        articles.append({
+            "source": {"name": item.get("source_id", "NewsData").upper()},
+            "author": None,
+            "title": item.get("title", ""),
+            "description": item.get("description", ""),
+            "url": item.get("link", ""),
+            "urlToImage": item.get("image_url", ""),
+            "publishedAt": item.get("pubDate", "")
+        })
+    return {"status": "ok", "totalResults": len(articles), "articles": articles}
+
 @app.get("/api/news", status_code=status.HTTP_200_OK)
 async def get_latest_news(q: Optional[str] = None, category: Optional[str] = None):
     try:
-        domains = "bbc.co.uk,bbc.com,reuters.com,thehindu.com,indianexpress.com,ndtv.com,cnn.com"
-        search_terms = []
-        if q:
-            search_terms.append(q)
-        if category and category.lower() != 'all':
-            search_terms.append(category)
-            
-        if search_terms:
-            combined_q = " ".join(search_terms)
-            quoted_q = urllib.parse.quote(combined_q)
-            url = f"https://newsapi.org/v2/everything?q={quoted_q}&domains={domains}&language=en&pageSize=12&apiKey={NEWS_API_KEY}"
-        else:
-            url = f"https://newsapi.org/v2/everything?domains={domains}&language=en&sortBy=publishedAt&pageSize=12&apiKey={NEWS_API_KEY}"
-            
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=4.0) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-        return res_data
+        return fetch_news_newsdata(q, category)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch news from NewsAPI: {str(e)}"
-        )
+        print(f"NewsData.io feed failed: {str(e)}. Falling back to NewsAPI...")
+        try:
+            domains = "bbc.co.uk,bbc.com,reuters.com,thehindu.com,indianexpress.com,ndtv.com,cnn.com"
+            search_terms = []
+            if q:
+                search_terms.append(q)
+            if category and category.lower() != 'all':
+                search_terms.append(category)
+                
+            if search_terms:
+                combined_q = " ".join(search_terms)
+                quoted_q = urllib.parse.quote(combined_q)
+                url = f"https://newsapi.org/v2/everything?q={quoted_q}&domains={domains}&language=en&pageSize=12&apiKey={NEWS_API_KEY}"
+            else:
+                url = f"https://newsapi.org/v2/everything?domains={domains}&language=en&sortBy=publishedAt&pageSize=12&apiKey={NEWS_API_KEY}"
+                
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=4.0) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+            return res_data
+        except Exception as ex:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to fetch news from both NewsData.io and NewsAPI: {str(ex)}"
+            )
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 @app.get("/api/health", status_code=status.HTTP_200_OK)
