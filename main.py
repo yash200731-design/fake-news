@@ -70,6 +70,22 @@ def fetch_fact_check(query: str) -> Optional[dict]:
         print(f"Fact Check API warning: {str(e)}")
     return None
 
+def get_fact_check_verdict_category(verdict_text: str) -> str:
+    """
+    Classifies raw fact check ratings into FALSE, TRUE, or NONE categories.
+    """
+    if not verdict_text:
+        return "NONE"
+    v = verdict_text.lower()
+    false_keywords = ["false", "fake", "incorrect", "untrue", "debunked", "misleading", "partly false"]
+    true_keywords = ["true", "correct", "accurate", "legitimate", "verified", "mostly true", "correct attribution"]
+    
+    if any(fk in v for fk in false_keywords):
+        return "FALSE"
+    if any(tk in v for tk in true_keywords):
+        return "TRUE"
+    return "NONE"
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -100,7 +116,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VeriTruth AI - Fake News Detection API",
     description="FastAPI service utilizing a Hugging Face DistilBERT Transformer fake news classifier and Google Fact Check API.",
-    version="2.1.0",
+    version="2.2.0",
     lifespan=lifespan
 )
 
@@ -124,8 +140,10 @@ class PredictionRequest(BaseModel):
 
 # Output Pydantic Model for API response validation
 class PredictionResponse(BaseModel):
-    prediction: str = Field(..., description="Machine Learning Prediction: 'Real' or 'Fake'")
+    prediction: str = Field(..., description="Final Verdict: 'Fake', 'Verified Real', 'Real' (or whatever ML predicted), or 'Prediction Uncertain'")
+    ml_prediction: str = Field(..., description="Raw Machine Learning Prediction: 'Real' or 'Fake'")
     confidence: float = Field(..., description="Model confidence score as a percentage (0.0 to 100.0)")
+    uncertain: bool = Field(..., description="True if final verdict is Prediction Uncertain")
     fact_check_status: str = Field(..., description="Google Fact Check status verdict or 'No verified fact check found.'")
     publisher: Optional[str] = Field(None, description="Fact check publisher")
     review_url: Optional[str] = Field(None, description="URL of the fact check review")
@@ -136,7 +154,7 @@ class PredictionResponse(BaseModel):
 async def predict_article(request: PredictionRequest):
     """
     Predicts whether a news article is Real or Fake using the fine-tuned DistilBERT model.
-    Also queries the Google Fact Check API to cross-reference the claim.
+    Also queries the Google Fact Check API to execute hybrid decision engine rules.
     """
     try:
         cleaned_text = clean_text_bert(request.text)
@@ -169,24 +187,43 @@ async def predict_article(request: PredictionRequest):
         search_query = extract_search_query(request.text)
         fact_check_result = fetch_fact_check(search_query)
         
+        # Classify the fact check rating if found
+        fact_check_category = "NONE"
         if fact_check_result:
-            return PredictionResponse(
-                prediction=verdict,
-                confidence=confidence_pct,
-                fact_check_status=fact_check_result["verdict"],
-                publisher=fact_check_result["publisher"],
-                review_url=fact_check_result["source_link"],
-                published_date=fact_check_result.get("date")
-            )
+            fact_check_category = get_fact_check_verdict_category(fact_check_result["verdict"])
+            
+        # 3. Hybrid Decision Engine Precedence Rules
+        if fact_check_category == "FALSE":
+            final_verdict = "Fake"
+            is_uncertain = False
+        elif fact_check_category == "TRUE":
+            final_verdict = "Verified Real"
+            is_uncertain = False
         else:
-            return PredictionResponse(
-                prediction=verdict,
-                confidence=confidence_pct,
-                fact_check_status="No verified fact check found.",
-                publisher=None,
-                review_url=None,
-                published_date=None
-            )
+            # Fact check has no result (NONE)
+            if confidence_pct > 90.0:
+                final_verdict = verdict # Show ML prediction ("Real" or "Fake")
+                is_uncertain = False
+            else:
+                final_verdict = "Prediction Uncertain"
+                is_uncertain = True
+                
+        # Format fact check response parameters
+        fc_status = fact_check_result["verdict"] if fact_check_result else "No verified fact check found."
+        fc_pub = fact_check_result["publisher"] if fact_check_result else None
+        fc_url = fact_check_result["source_link"] if fact_check_result else None
+        fc_date = fact_check_result.get("date") if fact_check_result else None
+        
+        return PredictionResponse(
+            prediction=final_verdict,
+            ml_prediction=verdict,
+            confidence=confidence_pct,
+            uncertain=is_uncertain,
+            fact_check_status=fc_status,
+            publisher=fc_pub,
+            review_url=fc_url,
+            published_date=fc_date
+        )
         
     except Exception as e:
         raise HTTPException(
@@ -212,7 +249,7 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
             
         req = urllib.request.Request(
             url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.1"}
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.2"}
         )
         
         with urllib.request.urlopen(req, timeout=4.0) as response:

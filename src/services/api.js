@@ -111,11 +111,16 @@ export async function predictNews(text) {
       date: data.published_date || null
     } : null;
 
+    let displayPrediction = data.prediction;
+    if (displayPrediction === 'Verified Real') {
+      displayPrediction = '✓ VERIFIED REAL';
+    }
+
     return {
-      prediction: data.prediction,
-      ml_prediction: data.prediction,
+      prediction: displayPrediction,
+      ml_prediction: data.ml_prediction || data.prediction,
       confidence: confidence,
-      uncertain: confidence < 75.0,
+      uncertain: data.uncertain || false,
       probabilities: {
         Real: probReal,
         Fake: probFake
