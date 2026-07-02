@@ -338,6 +338,8 @@ async def predict_article(request: PredictionRequest):
             
         # 6. Attributions & Explanations
         explanations_list = []
+        if model_error:
+            explanations_list.append(f"Diagnostics: {model_error}")
         if final_verdict in ["Real", "VERIFIED REAL", "Likely Real"]:
             if confidence_pct >= 75.0:
                 explanations_list.append("Professional journalistic writing detected.")
