@@ -145,7 +145,7 @@ export default function ResultCard({ result, loading }) {
         {/* Verdict Badge */}
         <div className="text-center py-4 rounded-xl bg-slate-950/45 border border-dark-border/30">
           <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest block mb-1">
-            Verdict
+            Prediction
           </span>
           <h4 className={`font-display font-extrabold text-3xl tracking-wide uppercase ${
             isUncertain ? 'text-amber-500' : isFake ? 'text-red-500' : 'text-brand-green'
@@ -164,7 +164,7 @@ export default function ResultCard({ result, loading }) {
         {/* Confidence Percentage */}
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-text-secondary">Model Confidence Rating:</span>
+            <span className="text-text-secondary">Confidence:</span>
             <span className={`font-mono font-bold ${isUncertain ? 'text-amber-400' : isFake ? 'text-red-400' : 'text-brand-green-light'}`}>
               {confidence}%
             </span>
@@ -235,7 +235,7 @@ export default function ResultCard({ result, loading }) {
               
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-dark-border/10 mt-1">
                 <div className="flex items-center space-x-2">
-                  <span className="text-[10px] text-text-muted uppercase">Verdict:</span>
+                  <span className="text-[10px] text-text-muted uppercase">Fact Check Status:</span>
                   <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border ${getVerdictStyle(fact_check.verdict)}`}>
                     {fact_check.verdict}
                   </span>
@@ -253,7 +253,7 @@ export default function ResultCard({ result, loading }) {
                   rel="noopener noreferrer" 
                   className="inline-flex items-center text-brand-green hover:underline font-bold text-xs gap-0.5"
                 >
-                  Source Link <ArrowUpRight className="w-3.5 h-3.5" />
+                  Source URL <ArrowUpRight className="w-3.5 h-3.5" />
                 </a>
               </div>
             </div>
