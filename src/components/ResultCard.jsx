@@ -252,7 +252,7 @@ export default function ResultCard({ result, loading }) {
           ) : (
             <div className="py-4 px-4 rounded-xl bg-slate-950/20 border border-dark-border/20 text-center">
               <span className="text-text-muted text-xs font-semibold">
-                No fact check found.
+                No verified fact check available.
               </span>
             </div>
           )}
