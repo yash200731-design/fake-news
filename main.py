@@ -4,15 +4,19 @@ import time
 import urllib.request
 import urllib.parse
 import json
+import math
 from contextlib import asynccontextmanager
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# Global variables for model and vectorizer
-model = None
-vectorizer = None
+# Global variables for serialized model data
+model_vocab = {}
+model_idf = []
+model_folds = []
+model_error = None
+
 FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
 NEWS_API_KEY = "1fa513057c4d4684887264914f35d197"
 
@@ -44,9 +48,9 @@ def clean_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
     text = text.lower()
-    text = re.sub(r'<.*?>', '', text) # Remove HTML
-    text = re.sub(r'https?://\S+|www\.\S+', '', text) # Remove URLs
-    text = re.sub(r'[^a-zA-Z\s]', '', text) # Remove special characters/numbers
+    text = re.sub(r'<.*?>', '', text) # HTML
+    text = re.sub(r'https?://\S+|www\.\S+', '', text) # URLs
+    text = re.sub(r'[^a-zA-Z\s]', '', text) # Special chars/numbers
     text = re.sub(r'\s+', ' ', text).strip() # Extra spaces
     
     words = text.split()
@@ -97,9 +101,6 @@ def get_fact_check_verdict_category(verdict_text: str) -> str:
     return "NONE"
 
 def fetch_similar_news_newsapi(query: str) -> list:
-    """
-    Searches NewsAPI for similar news articles from trusted sources.
-    """
     if not query or not NEWS_API_KEY:
         return []
     try:
@@ -123,9 +124,81 @@ def fetch_similar_news_newsapi(query: str) -> list:
         print(f"NewsAPI query warning: {str(e)}")
         return []
 
+def predict_probs_pure(text: str) -> tuple:
+    """
+    Runs a pure Python TF-IDF and calibrated Linear SVM classification.
+    Returns (prob_real, prob_fake) percentages.
+    """
+    global model_vocab, model_idf, model_folds
+    if not model_vocab or not model_idf or not model_folds:
+        return 50.0, 50.0
+        
+    cleaned = clean_text(text)
+    tokens = cleaned.split()
+    if not tokens:
+        return 50.0, 50.0
+        
+    # Extract 1-grams and 2-grams
+    ngrams = []
+    for t in tokens:
+        ngrams.append(t)
+    for i in range(len(tokens) - 1):
+        ngrams.append(f"{tokens[i]} {tokens[i+1]}")
+        
+    # Term counts
+    counts = {}
+    for ng in ngrams:
+        if ng in model_vocab:
+            counts[ng] = counts.get(ng, 0) + 1
+            
+    # Calculate TF-IDF raw values
+    raw_tfidf = {}
+    for term, count in counts.items():
+        idx = model_vocab[term]
+        raw_tfidf[term] = count * model_idf[idx]
+        
+    # L2 norm normalization
+    sq_sum = sum(val ** 2 for val in raw_tfidf.values())
+    norm = math.sqrt(sq_sum)
+    
+    normalized_tfidf = {}
+    if norm > 0:
+        for term, val in raw_tfidf.items():
+            normalized_tfidf[term] = val / norm
+            
+    sum_fake = 0.0
+    sum_real = 0.0
+    
+    # Average calibrated predictions across folds
+    for fold in model_folds:
+        coef = fold["coef"]
+        intercept = fold["intercept"]
+        a = fold["a"]
+        b = fold["b"]
+        
+        # Dot product
+        score = intercept
+        for term, val in normalized_tfidf.items():
+            idx = model_vocab[term]
+            score += val * coef[idx]
+            
+        # Sigmoid Platt calibration
+        try:
+            prob_fake = 1.0 / (1.0 + math.exp(a * score + b))
+        except OverflowError:
+            prob_fake = 0.0 if (a * score + b) > 0 else 1.0
+            
+        sum_fake += prob_fake
+        sum_real += (1.0 - prob_fake)
+        
+    avg_real = round((sum_real / len(model_folds)) * 100.0, 1)
+    avg_fake = round((sum_fake / len(model_folds)) * 100.0, 1)
+    
+    return avg_real, avg_fake
+
 def explain_text_perturbation(text: str, original_prob_real: float, num_features: int = 15) -> list:
-    global model, vectorizer
-    if not model or not vectorizer:
+    global model_vocab
+    if not model_vocab:
         return []
     try:
         words = re.findall(r'\b[a-zA-Z]{4,}\b', text)
@@ -133,21 +206,15 @@ def explain_text_perturbation(text: str, original_prob_real: float, num_features
         if not unique_words:
             return []
             
-        perturbed_texts = []
+        highlights = []
         for word in unique_words:
             pattern = r'\b' + re.escape(word) + r'\b'
             perturbed_text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-            perturbed_texts.append(clean_text(perturbed_text))
             
-        X_perturbed = vectorizer.transform(perturbed_texts)
-        probs = model.predict_proba(X_perturbed)
-        
-        highlights = []
-        for i, word in enumerate(unique_words):
-            perturbed_prob_real = probs[i][0] * 100.0
+            # Predict on perturbed text using pure python helper
+            perturbed_prob_real, _ = predict_probs_pure(perturbed_text)
             diff = original_prob_real - perturbed_prob_real
             
-            # Label supports: Real, Fake, or Neutral based on attribution delta
             if abs(diff) < 0.05:
                 supports = "Neutral"
                 score = 0.0
@@ -160,46 +227,44 @@ def explain_text_perturbation(text: str, original_prob_real: float, num_features
                 "score": score,
                 "supports": supports
             })
-        # Sort highlights: put Neutral at the bottom
+            
         highlights = sorted(highlights, key=lambda x: x["score"] if x["supports"] != "Neutral" else -1, reverse=True)[:num_features]
         return highlights
     except Exception as e:
-        print(f"LIME attribution warning: {str(e)}")
+        print(f"Explainability warning: {str(e)}")
         return []
-
-model_error = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model, vectorizer, model_error
+    global model_vocab, model_idf, model_folds, model_error
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(base_dir, "model.pkl")
-    vectorizer_path = os.path.join(base_dir, "vectorizer.pkl")
+    model_data_path = os.path.join(base_dir, "model_data.json")
     
     try:
-        import joblib
-        if os.path.exists(model_path) and os.path.exists(vectorizer_path):
-            model = joblib.load(model_path)
-            vectorizer = joblib.load(vectorizer_path)
-            print("SUCCESS: Traditional model and vectorizer loaded successfully!")
+        if os.path.exists(model_data_path):
+            with open(model_data_path) as f:
+                model_data = json.load(f)
+            model_vocab = model_data["vocabulary"]
+            model_idf = model_data["idf"]
+            model_folds = model_data["folds"]
+            print("SUCCESS: Pure Python model parameters loaded successfully!")
         else:
-            model_error = f"Files missing. model_path exists: {os.path.exists(model_path)}, vectorizer_path exists: {os.path.exists(vectorizer_path)}"
+            model_error = f"model_data.json missing at {model_data_path}"
             print(f"CRITICAL: {model_error}")
     except Exception as e:
         model_error = f"{type(e).__name__}: {str(e)}"
-        print(f"CRITICAL ERROR loading model: {str(e)}")
+        print(f"CRITICAL ERROR loading model data: {str(e)}")
         
     yield
     print("Application shutdown complete.")
 
 app = FastAPI(
     title="VeriTruth AI - News Credibility Analyzer",
-    description="FastAPI service combining Scikit-Learn predictions, Google Fact Check verification, and explainability.",
-    version="3.0.0",
+    description="FastAPI service running pure Python mathematical TF-IDF SVM inference.",
+    version="3.1.0",
     lifespan=lifespan
 )
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -208,7 +273,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Input Pydantic Model
 class PredictionRequest(BaseModel):
     text: str = Field(..., min_length=15, max_length=50000)
 
@@ -223,7 +287,6 @@ class HighlightFeature(BaseModel):
     score: float = Field(..., description="Explainability attribution score")
     supports: str = Field(..., description="Supports: 'Real', 'Fake', or 'Neutral'")
 
-# Output Pydantic Model
 class PredictionResponse(BaseModel):
     prediction: str = Field(..., description="Final Verdict")
     confidence: float = Field(..., description="Final confidence rating percentage")
@@ -243,35 +306,23 @@ class PredictionResponse(BaseModel):
 @app.post("/api/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 async def predict_article(request: PredictionRequest):
     try:
-        # Graceful check for short headlines (Requirement 9)
         word_count = len(request.text.split())
         is_short = word_count < 8
         
-        # 1. Machine Learning Inference
-        if not model or not vectorizer:
-            print("WARNING: Model artifacts not loaded. Falling back to default baseline estimates.")
+        # 1. Machine Learning Inference (Pure Python)
+        if not model_vocab:
             prob_real_pct = 50.0
             prob_fake_pct = 50.0
             ml_pred = "Real"
             confidence_pct = 50.0
         else:
-            cleaned_text = clean_text(request.text)
-            if not cleaned_text:
-                cleaned_text = "empty text fallback"
-                
-            X_text = vectorizer.transform([cleaned_text])
-            probs = model.predict_proba(X_text)[0] # [probability_real, probability_fake]
-            
-            prob_real_pct = round(probs[0] * 100, 1)
-            prob_fake_pct = round(probs[1] * 100, 1)
-            
             if is_short:
-                # Override to low confidence if text is extremely short (Requirement 9)
                 prob_real_pct = 50.0
                 prob_fake_pct = 50.0
                 ml_pred = "Real"
                 confidence_pct = 50.0
             else:
+                prob_real_pct, prob_fake_pct = predict_probs_pure(request.text)
                 ml_pred = "Real" if prob_real_pct >= 50.0 else "Fake"
                 confidence_pct = prob_real_pct if ml_pred == "Real" else prob_fake_pct
                 
@@ -298,7 +349,6 @@ async def predict_article(request: PredictionRequest):
         elif fact_check_category == "FALSE":
             final_verdict = "FAKE"
         else:
-            # No Google Fact Check matches
             if confidence_pct >= 80.0:
                 final_verdict = ml_pred
             elif 60.0 <= confidence_pct < 80.0:
@@ -320,7 +370,6 @@ async def predict_article(request: PredictionRequest):
                 credibility_score = round(80.0 + (confidence_pct - 75.0) * 14.0 / 15.0, 1)
                 risk_level = "Medium"
             else:
-                # Confidence < 75%
                 credibility_score = round((confidence_pct / 75.0) * 79.0, 1)
                 risk_level = "High"
         elif final_verdict in ["Fake", "FAKE", "Likely Fake"]:
@@ -332,7 +381,6 @@ async def predict_article(request: PredictionRequest):
             else:
                 credibility_score = round(100.0 - ((confidence_pct / 75.0) * 79.0), 1)
         else:
-            # Prediction Uncertain
             credibility_score = 50.0
             risk_level = "Medium"
             
@@ -355,9 +403,8 @@ async def predict_article(request: PredictionRequest):
             explanations_list.append("Similar to verified news patterns.")
             
         highlights = []
-        if model and vectorizer:
-            cleaned_text = clean_text(request.text)
-            highlights = explain_text_perturbation(cleaned_text, prob_real_pct)
+        if model_vocab:
+            highlights = explain_text_perturbation(request.text, prob_real_pct)
             
         return PredictionResponse(
             prediction=final_verdict,
@@ -410,14 +457,13 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
 @app.get("/health", status_code=status.HTTP_200_OK)
 @app.get("/api/health", status_code=status.HTTP_200_OK)
 async def health_check():
-    is_model_ready = model is not None
+    is_model_ready = len(model_vocab) > 0
     base_dir = os.path.dirname(os.path.abspath(__file__))
     return {
         "status": "online" if is_model_ready else "degraded",
         "model_loaded": is_model_ready,
         "error": model_error,
         "base_dir": base_dir,
-        "model_exists": os.path.exists(os.path.join(base_dir, "model.pkl")),
-        "vectorizer_exists": os.path.exists(os.path.join(base_dir, "vectorizer.pkl")),
+        "model_exists": os.path.exists(os.path.join(base_dir, "model_data.json")),
         "dir_contents": os.listdir(base_dir) if os.path.exists(base_dir) else []
     }
