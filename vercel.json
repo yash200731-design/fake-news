@@ -8,12 +8,7 @@
   "functions": {
     "api/index.py": {
       "includeFiles": "model.pkl,vectorizer.pkl,nltk_data/**",
-      "excludeFiles": [
-        "fake.csv",
-        "true.csv",
-        "train_model.py",
-        "train_traditional.py"
-      ]
+      "excludeFiles": "*.csv"
     }
   }
 }
