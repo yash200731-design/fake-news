@@ -1,48 +1,215 @@
+import os
+import re
+import time
+import pandas as pd
+import numpy as np
 import joblib
+import nltk
+from nltk.stem import WordNetLemmatizer
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
-# Realistic training corpus representing real and fake news indicators
-# 0 = Real News, 1 = Fake News / Misinformation
-corpus = [
-    # --- REAL NEWS ---
-    ("Researchers published a new peer-reviewed study on Wednesday in the Journal of Medicine detailing the impact of global trade shifts on local agricultural economies. According to the study, official reports from the agriculture department show a steady recovery in farm yields. A spokesperson stated that a press conference will be held next week to discuss long-term crop sustainability programs and water management reforms.", 0),
-    ("The Federal Reserve announced on Thursday that it is keeping interest rates unchanged, citing steady economic growth and moderating inflation. The central bank stated that it remains committed to its target rate and will monitor economic indicators closely in the coming months.", 0),
-    ("Local authorities confirmed that the highway expansion project has been completed ahead of schedule. The transportation department issued a statement confirming that all lanes are now open to commuter traffic, which is expected to ease congestion in the metro area.", 0),
-    ("A spokesperson for the World Health Organization announced that a new initiative has been launched to combat infectious diseases in developing nations. The global program will distribute vaccines, medical supplies, and provide clinical training to local healthcare workers.", 0),
-    ("Major tech companies reported their quarterly earnings reports, showing solid revenue growth driven by cloud computing divisions. Analysts noted that demand for database and cloud storage services remains strong across global corporate sectors.", 0),
-    ("According to official reports, the metropolitan school board approved a new budget for the upcoming academic year. The funding will support classroom improvements, teacher salaries, and digital learning platforms across all public school districts.", 0),
-    ("The National Space Agency successfully launched a weather satellite into orbit on Tuesday evening. Mission control confirmed that the telemetry signals are healthy and the satellite has deployed its solar arrays for power collection.", 0),
-    ("A panel of international economists released a statement urging governments to invest in renewable energy infrastructure. The study suggests that long-term transition policies will create jobs and stabilize global energy markets.", 0),
-    ("The city council voted to approve a new zoning layout that allows for the construction of affordable housing units downtown. Municipal officials said the development plans include green spaces and pedestrian pathways.", 0),
-    ("In a press conference today, the foreign ministry declared that bilateral talks have successfully concluded, leading to a new trade agreement. The treaty is designed to lower tariffs on agricultural imports and exports.", 0),
+# Setup NLTK search path for local WordNet corpus
+base_dir = os.path.dirname(os.path.abspath(__file__))
+nltk.data.path.append(os.path.join(base_dir, "nltk_data"))
 
-    # --- FAKE NEWS / MISINFORMATION ---
-    ("SHOCKING TRUTH: A secret source has confirmed that alien spacecraft have landed in a hidden desert base. The government is keeping this quiet to hide the miracle technologies which could cure all illnesses instantly. Scientists are quiet because they are being controlled by the Illuminati who want to enforce 5G radiation microchips on the entire global population. Share this before it gets taken down by the media!", 1),
-    ("MIRACLE CURE EXPOSED: Doctors are furious that this simple secret home remedy is curing cancer in just 24 hours. The pharmaceutical industry is trying to ban this organic recipe to protect their corporate profits. Click this link right now to find out the shocking recipe before they delete it forever!", 1),
-    ("MUST READ: Secret government documents leaked online prove that the earth is actually hollow and a advanced civilization lives inside it. Major media channels are refusing to report this mind-blowing discovery because they are controlled by corrupt politicians! Share this post with everyone you know!", 1),
-    ("BREAKING NEWS: A massive conspiracy has been uncovered. Big tech companies are using your smart devices to project secret subliminal waves that control your thoughts and force you to buy their products. A whistleblower has escaped and revealed the whole truth in a shocking video!", 1),
-    ("WARNING: A secret chemical is being sprayed in our drinking water to make citizens submissive to a global dictatorship. Scientists who tried to warning the public have gone missing mysteriously. Buy our filtration kit today to protect your family from this hidden threat!", 1),
-    ("ANONYMOUS SOURCE CLAIMS: The presidential election was completely simulated by supercomputers. No real votes were counted, and the results were decided months in advance by a cabal of bankers. Share this immediately before the censors wipe it from the internet!", 1),
-    ("SHOCKING DISCOVERY: Eating this common fruit immediately immunizes you to all types of viruses and disease. The government does not want you to know about this because they make billions from hospital visits. Reveal the secret truth by sharing this with ten friends!", 1),
-    ("Leaked footage shows that space agencies staged all moon landings in a television studio. The fake videos were created to win the space race. Watch this hidden video evidence showing the directors and studio setups before it gets banned!", 1),
-    ("ALERT: The new global currency system will be activated tomorrow at midnight, wiping out all bank accounts and cash values. Only those who purchase our certified gold reserves will survive the coming financial reset. Act now before it is too late!", 1),
-    ("SECRET AGENDA: International leaders are planning to replace all physical currencies with microchip implants that monitor your daily activities and enforce social credit scores. The corporate media is keeping this secret to prevent mass protests!", 1),
-]
+# Initialize WordNet Lemmatizer
+lemmatizer = WordNetLemmatizer()
 
-# Separate features and labels
-texts, labels = zip(*corpus)
+# Standard stopword list matching main.py
+STOPWORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't", "as", "at", 
+    "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can't", "cannot", "could", 
+    "couldn't", "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", "each", "few", "for", 
+    "from", "further", "had", "hadn't", "has", "hasn't", "have", "haven't", "having", "he", "he'd", "he'll", "he's", 
+    "her", "here", "here's", "hers", "herself", "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", 
+    "i've", "if", "in", "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most", "mustn't", 
+    "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", 
+    "ourselves", "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", 
+    "so", "some", "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves", "then", "there", 
+    "there's", "these", "they", "they'd", "they'll", "they're", "they've", "this", "those", "through", "to", "too", 
+    "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", 
+    "what", "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", 
+    "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", 
+    "yourselves"
+}
 
-# Initialize and fit TF-IDF vectorizer
-vectorizer = TfidfVectorizer(max_features=2500, ngram_range=(1, 2))
-X = vectorizer.fit_transform(texts)
+def clean_and_lemmatize(text):
+    if not isinstance(text, str):
+        return ""
+        
+    # 1. Convert to lowercase
+    text = text.lower()
+    
+    # 2. Remove HTML tags
+    text = re.sub(r'<.*?>', '', text)
+    
+    # 3. Remove URLs
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    
+    # 4. Remove publisher source markers to eliminate model leakage (Reuters bias)
+    text = re.sub(r'\b(reuters|ap|associated\s+press|editorial)\b', '', text)
+    
+    # 5. Remove punctuation and numbers
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    
+    # 6. Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # 7. Remove stop words & Apply lemmatization
+    words = text.split()
+    cleaned_words = []
+    for w in words:
+        if w not in STOPWORDS:
+            # Lemmatize noun forms
+            cleaned_words.append(lemmatizer.lemmatize(w))
+            
+    return " ".join(cleaned_words)
 
-# Train a Logistic Regression Classifier
-model = LogisticRegression(C=1.0, random_state=42)
-model.fit(X, labels)
+def main():
+    print("Loading datasets...")
+    # Read Kaggle CSV files
+    true_df = pd.read_csv('true.csv')
+    fake_df = pd.read_csv('fake.csv')
 
-# Serialize and save model artifacts
-joblib.dump(model, 'model.pkl')
-joblib.dump(vectorizer, 'vectorizer.pkl')
+    # Assign labels (0 = Real, 1 = Fake)
+    true_df['label'] = 0
+    fake_df['label'] = 1
 
-print("Vectorizer ('vectorizer.pkl') and Model ('model.pkl') trained and exported successfully!")
+    # Combine datasets
+    df = pd.concat([true_df, fake_df], ignore_index=True)
+    print(f"Total articles loaded: {len(df)} (True: {len(true_df)}, Fake: {len(fake_df)})")
+
+    # Combine title and text columns
+    print("Combining title and text...")
+    df['combined_text'] = df['title'] + " " + df['text']
+
+    # Preprocess text
+    print("Preprocessing, cleaning and lemmatizing text (this may take 1-2 minutes)...")
+    start_time = time.time()
+    df['cleaned_text'] = df['combined_text'].apply(clean_and_lemmatize)
+    print(f"Preprocessing completed in {time.time() - start_time:.2f}s")
+
+    # Split into train/test sets (80% train, 20% test)
+    train_df, test_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df['label'])
+
+    # TF-IDF Feature Engineering
+    print("Initializing TF-IDF vectorizer (max_features=50000)...")
+    vectorizer = TfidfVectorizer(max_features=50000, ngram_range=(1, 2), min_df=2, max_df=0.9)
+    
+    print("Fitting vectorizer on training text...")
+    X_train = vectorizer.fit_transform(train_df['cleaned_text'])
+    y_train = train_df['label'].values
+    
+    print("Transforming test text...")
+    X_test = vectorizer.transform(test_df['cleaned_text'])
+    y_test = test_df['label'].values
+
+    # Subsample for GridSearchCV hyperparameter tuning to keep training time reasonable
+    print("Subsampling for hyperparameter tuning...")
+    grid_sample_size = min(8000, len(train_df))
+    grid_df = train_df.sample(n=grid_sample_size, random_state=42)
+    X_grid = vectorizer.transform(grid_df['cleaned_text'])
+    y_grid = grid_df['label'].values
+    
+    X_grid_train, X_grid_test, y_grid_train, y_grid_test = train_test_split(
+        X_grid, y_grid, test_size=0.25, random_state=42, stratify=y_grid
+    )
+
+    print(f"Grid search tuning sample sizes: Train={X_grid_train.shape[0]}, Test={X_grid_test.shape[0]}")
+
+    models_comparison = {}
+
+    # 1. Tune Logistic Regression
+    print("\nTuning Logistic Regression using GridSearchCV...")
+    lr_param_grid = {'C': [0.1, 1.0, 10.0]}
+    lr_grid = GridSearchCV(LogisticRegression(max_iter=1000, random_state=42), lr_param_grid, cv=3, n_jobs=-1, scoring='f1')
+    lr_grid.fit(X_grid_train, y_grid_train)
+    best_lr = lr_grid.best_estimator_
+    print(f"Best Logistic Regression Params: {lr_grid.best_params_}")
+    models_comparison['Logistic Regression'] = (best_lr, lr_grid.best_params_)
+
+    # 2. Tune Linear SVM
+    print("\nTuning Linear SVM using GridSearchCV...")
+    svm_param_grid = {'C': [0.1, 1.0, 10.0]}
+    svm_grid = GridSearchCV(LinearSVC(max_iter=2000, random_state=42, dual=False), svm_param_grid, cv=3, n_jobs=-1, scoring='f1')
+    svm_grid.fit(X_grid_train, y_grid_train)
+    best_svm = svm_grid.best_estimator_
+    print(f"Best Linear SVM Params: {svm_grid.best_params_}")
+    models_comparison['Linear SVM'] = (best_svm, svm_grid.best_params_)
+
+    # 3. Tune Random Forest
+    print("\nTuning Random Forest using GridSearchCV...")
+    rf_param_grid = {'n_estimators': [50, 100], 'max_depth': [20, None]}
+    rf_grid = GridSearchCV(RandomForestClassifier(random_state=42), rf_param_grid, cv=3, n_jobs=-1, scoring='f1')
+    rf_grid.fit(X_grid_train, y_grid_train)
+    best_rf = rf_grid.best_estimator_
+    print(f"Best Random Forest Params: {rf_grid.best_params_}")
+    models_comparison['Random Forest'] = (best_rf, rf_grid.best_params_)
+
+    # Evaluate Tuned Models on validation subset
+    best_model_name = None
+    best_model_score = -1
+    best_model_params = None
+
+    print("\n--- Model Tuning Results (Subset Evaluation) ---")
+    for name, (model_obj, params) in models_comparison.items():
+        preds = model_obj.predict(X_grid_test)
+        f1 = f1_score(y_grid_test, preds)
+        acc = accuracy_score(y_grid_test, preds)
+        print(f"{name}: F1-Score={f1:.4f}, Accuracy={acc:.4f} (Params: {params})")
+        if f1 > best_model_score:
+            best_model_score = f1
+            best_model_name = name
+            best_model_params = params
+
+    print(f"\nSelected Model Class for final training: {best_model_name}")
+
+    # Retrain selected best model on the FULL training set
+    print(f"\nRetraining final {best_model_name} model on the FULL training set ({X_train.shape[0]} articles)...")
+    start_train = time.time()
+    
+    if best_model_name == 'Logistic Regression':
+        final_model = LogisticRegression(C=best_model_params['C'], max_iter=1000, random_state=42)
+    elif best_model_name == 'Linear SVM':
+        final_model = LinearSVC(C=best_model_params['C'], max_iter=2000, random_state=42, dual=False)
+    else:
+        final_model = RandomForestClassifier(
+            n_estimators=best_model_params['n_estimators'],
+            max_depth=best_model_params['max_depth'],
+            random_state=42,
+            n_jobs=-1
+        )
+        
+    final_model.fit(X_train, y_train)
+    print(f"Final training completed in {time.time() - start_train:.2f}s")
+
+    # Evaluate Final Model on the FULL Test Dataset
+    print("\n--- Final Model Evaluation (Full Test Set) ---")
+    final_preds = final_model.predict(X_test)
+    
+    acc = accuracy_score(y_test, final_preds)
+    prec = precision_score(y_test, final_preds)
+    rec = recall_score(y_test, final_preds)
+    f1 = f1_score(y_test, final_preds)
+    cm = confusion_matrix(y_test, final_preds)
+    
+    print(f"Accuracy:  {acc:.4f}")
+    print(f"Precision: {prec:.4f}")
+    print(f"Recall:    {rec:.4f}")
+    print(f"F1 Score:  {f1:.4f}")
+    print("Confusion Matrix:")
+    print(cm)
+
+    # Save artifacts
+    print("\nSaving final model artifacts to model.pkl and vectorizer.pkl...")
+    joblib.dump(final_model, 'model.pkl')
+    joblib.dump(vectorizer, 'vectorizer.pkl')
+    print("SUCCESS: New high-accuracy pipeline complete!")
+
+if __name__ == "__main__":
+    main()

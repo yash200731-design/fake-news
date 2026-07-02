@@ -10,11 +10,20 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import nltk
+from nltk.stem import WordNetLemmatizer
+
 
 # Global variable for model parameters JSON
 model_data = None
 FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
 NEWS_API_KEY = "1fa513057c4d4684887264914f35d197"
+
+# Setup NLTK search path for local WordNet corpus
+base_dir = os.path.dirname(os.path.abspath(__file__))
+nltk.data.path.append(os.path.join(base_dir, "nltk_data"))
+lemmatizer = WordNetLemmatizer()
+
 
 # Identical STOPWORDS definition to ensure training and inference consistency
 STOPWORDS = {
@@ -36,8 +45,8 @@ STOPWORDS = {
 
 def clean_text(text: str) -> str:
     """
-    Identical text cleaning routine used in training to normalize inputs
-    and eliminate data leakage metrics (such as the Reuters bias).
+    Identical text cleaning routine used in training to normalize inputs,
+    apply WordNet lemmatization, and eliminate data leakage metrics (such as the Reuters bias).
     """
     if not isinstance(text, str):
         return ""
@@ -54,16 +63,19 @@ def clean_text(text: str) -> str:
     # 4. Remove publisher source markers to eliminate model leakage (Reuters bias)
     text = re.sub(r'\b(reuters|ap|associated\s+press|editorial)\b', '', text)
     
-    # 5. Remove special characters and digits, leaving only letters and spaces
+    # 5. Remove punctuation and numbers
     text = re.sub(r'[^a-zA-Z\s]', '', text)
     
     # 6. Remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     
-    # 7. Remove stop words
+    # 7. Remove stop words & Apply lemmatization
     words = text.split()
-    cleaned_words = [word for word in words if word not in STOPWORDS]
-    
+    cleaned_words = []
+    for w in words:
+        if w not in STOPWORDS:
+            cleaned_words.append(lemmatizer.lemmatize(w))
+            
     return " ".join(cleaned_words)
 
 @asynccontextmanager
