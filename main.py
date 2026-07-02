@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 # Global variables for model and tokenizer
 tokenizer = None
 model = None
+FACT_CHECK_API_KEY = "AIzaSyAFJufg3V5ArJrzxDFhxWzNDR_I0-Fzhh8"
 NEWS_API_KEY = "1fa513057c4d4684887264914f35d197"
 
 def clean_text_bert(text: str) -> str:
@@ -25,6 +26,49 @@ def clean_text_bert(text: str) -> str:
     # Remove extra spaces
     text = re.sub(r'\s+', ' ', text).strip()
     return text
+
+def extract_search_query(text: str) -> str:
+    """
+    Extracts the main claim sentence from the article text for fact check lookup.
+    """
+    clean = re.sub(r'\s+', ' ', text).strip()
+    sentences = re.split(r'(?<=[.!?])\s+', clean)
+    first_sentence = sentences[0] if sentences else clean
+    if len(first_sentence) > 150:
+        first_sentence = first_sentence[:150]
+    return first_sentence
+
+def fetch_fact_check(query: str) -> Optional[dict]:
+    """
+    Queries Google Fact Check Tools API for the given search query.
+    """
+    if not query or not FACT_CHECK_API_KEY:
+        return None
+    try:
+        quoted_query = urllib.parse.quote(query)
+        url = f"https://factchecktools.googleapis.com/v1alpha1/claims:search?query={quoted_query}&key={FACT_CHECK_API_KEY}"
+        
+        req = urllib.request.Request(
+            url, 
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.1"}
+        )
+        
+        with urllib.request.urlopen(req, timeout=3.5) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            
+        if res_data.get("claims"):
+            claim = res_data["claims"][0]
+            if claim.get("claimReview"):
+                review = claim["claimReview"][0]
+                return {
+                    "verdict": review.get("textualRating", "Unknown"),
+                    "publisher": review.get("publisher", {}).get("name", "Unknown"),
+                    "date": review.get("reviewDate"),
+                    "source_link": review.get("url")
+                }
+    except Exception as e:
+        print(f"Fact Check API warning: {str(e)}")
+    return None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,8 +99,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="VeriTruth AI - Fake News Detection API",
-    description="FastAPI service utilizing a Hugging Face DistilBERT Transformer fake news classifier.",
-    version="2.0.0",
+    description="FastAPI service utilizing a Hugging Face DistilBERT Transformer fake news classifier and Google Fact Check API.",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -80,45 +124,69 @@ class PredictionRequest(BaseModel):
 
 # Output Pydantic Model for API response validation
 class PredictionResponse(BaseModel):
-    prediction: str = Field(..., description="Legitimacy verdict: 'Real' or 'Fake'")
+    prediction: str = Field(..., description="Machine Learning Prediction: 'Real' or 'Fake'")
     confidence: float = Field(..., description="Model confidence score as a percentage (0.0 to 100.0)")
+    fact_check_status: str = Field(..., description="Google Fact Check status verdict or 'No verified fact check found.'")
+    publisher: Optional[str] = Field(None, description="Fact check publisher")
+    review_url: Optional[str] = Field(None, description="URL of the fact check review")
+    published_date: Optional[str] = Field(None, description="Published date of the claim review")
 
 @app.post("/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 @app.post("/api/predict", response_model=PredictionResponse, status_code=status.HTTP_200_OK)
 async def predict_article(request: PredictionRequest):
     """
     Predicts whether a news article is Real or Fake using the fine-tuned DistilBERT model.
+    Also queries the Google Fact Check API to cross-reference the claim.
     """
     try:
         cleaned_text = clean_text_bert(request.text)
         
+        # 1. DistilBERT Prediction
         if not tokenizer or not model:
             print("WARNING: DistilBERT model not loaded. Falling back to default confidence response.")
-            return PredictionResponse(prediction="Real", confidence=50.0)
+            verdict = "Real"
+            confidence_pct = 50.0
+        else:
+            import torch
+            # Tokenize text
+            inputs = tokenizer(cleaned_text, return_tensors="pt", truncation=True, max_length=256, padding=True)
             
-        import torch
-        # Tokenize text
-        inputs = tokenizer(cleaned_text, return_tensors="pt", truncation=True, max_length=256, padding=True)
-        
-        # Run inference
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits
+            # Run inference
+            with torch.no_grad():
+                outputs = model(**inputs)
+                logits = outputs.logits
+                
+            # Apply Softmax to get probabilities
+            probs = torch.softmax(logits, dim=-1).squeeze().tolist()
+            prob_real = probs[0]
+            prob_fake = probs[1]
             
-        # Apply Softmax to get probabilities
-        probs = torch.softmax(logits, dim=-1).squeeze().tolist()
-        prob_real = probs[0]
-        prob_fake = probs[1]
+            verdict = "Real" if prob_real >= 0.5 else "Fake"
+            confidence = prob_real if verdict == "Real" else prob_fake
+            confidence_pct = round(confidence * 100, 1)
+            
+        # 2. Google Fact Check Verification
+        search_query = extract_search_query(request.text)
+        fact_check_result = fetch_fact_check(search_query)
         
-        verdict = "Real" if prob_real >= 0.5 else "Fake"
-        confidence = prob_real if verdict == "Real" else prob_fake
-        
-        confidence_pct = round(confidence * 100, 1)
-        
-        return PredictionResponse(
-            prediction=verdict,
-            confidence=confidence_pct
-        )
+        if fact_check_result:
+            return PredictionResponse(
+                prediction=verdict,
+                confidence=confidence_pct,
+                fact_check_status=fact_check_result["verdict"],
+                publisher=fact_check_result["publisher"],
+                review_url=fact_check_result["source_link"],
+                published_date=fact_check_result.get("date")
+            )
+        else:
+            return PredictionResponse(
+                prediction=verdict,
+                confidence=confidence_pct,
+                fact_check_status="No verified fact check found.",
+                publisher=None,
+                review_url=None,
+                published_date=None
+            )
         
     except Exception as e:
         raise HTTPException(
@@ -144,7 +212,7 @@ async def get_latest_news(q: Optional[str] = None, category: Optional[str] = Non
             
         req = urllib.request.Request(
             url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.0"}
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeriTruthAI/2.1"}
         )
         
         with urllib.request.urlopen(req, timeout=4.0) as response:

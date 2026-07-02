@@ -102,17 +102,26 @@ export async function predictNews(text) {
     probReal = probReal <= 1 ? Math.round(probReal * 100) : Math.round(probReal);
     probFake = probFake <= 1 ? Math.round(probFake * 100) : Math.round(probFake);
 
+    let isFactCheckFound = data.fact_check_status && data.fact_check_status !== "No verified fact check found.";
+    let factCheckObj = isFactCheckFound ? {
+      claim_title: "Extracted Claim Match",
+      verdict: data.fact_check_status,
+      publisher: data.publisher || "Unknown",
+      source_link: data.review_url || "",
+      date: data.published_date || null
+    } : null;
+
     return {
       prediction: data.prediction,
-      ml_prediction: data.ml_prediction || data.prediction,
+      ml_prediction: data.prediction,
       confidence: confidence,
-      uncertain: data.uncertain || false,
+      uncertain: confidence < 75.0,
       probabilities: {
         Real: probReal,
         Fake: probFake
       },
       isMock: false,
-      fact_check: data.fact_check || null,
+      fact_check: factCheckObj,
       timestamp: new Date().toISOString()
     };
   } catch (error) {
